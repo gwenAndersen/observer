@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Data Submission</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        input[type="text"] { width: 100%; padding: 10px; margin-bottom: 10px; }
+        button { padding: 10px 15px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+    </style>
+</head>
+<body>
+    <h1>Submit Data to App</h1>
+    <input type="text" id="dataInput" placeholder="Enter data here">
+    <button onclick="submitData()">Submit</button>
+
+    <script>
+        function submitData() {
+            var data = document.getElementById('dataInput').value;
+            if (window.Android && window.Android.submitData) {
+                window.Android.submitData(data);
+                alert('Data submitted: ' + data);
+            } else {
+                alert('Android interface not available or submitData method not found.');
+            }
+        }
+    </script>
+</body>
+</html>

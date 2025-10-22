@@ -1,0 +1,30 @@
+[
+    {
+        "merged": "com.fahim.alyfobserver.app-debug-62:/mipmap-anydpi-v26_ic_launcher_foreground.xml.flat",
+        "source": "com.fahim.alyfobserver.app-main-64:/mipmap-anydpi-v26/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.fahim.alyfobserver.app-debug-62:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.fahim.alyfobserver.app-main-64:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.fahim.alyfobserver.app-debug-62:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.fahim.alyfobserver.app-main-64:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.fahim.alyfobserver.app-debug-62:/xml_accessibility_service_config.xml.flat",
+        "source": "com.fahim.alyfobserver.app-main-64:/xml/accessibility_service_config.xml"
+    },
+    {
+        "merged": "com.fahim.alyfobserver.app-debug-62:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.fahim.alyfobserver.app-main-64:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.fahim.alyfobserver.app-debug-62:/layout_widget_layout.xml.flat",
+        "source": "com.fahim.alyfobserver.app-main-64:/layout/widget_layout.xml"
+    },
+    {
+        "merged": "com.fahim.alyfobserver.app-debug-62:/xml_website_widget_info.xml.flat",
+        "source": "com.fahim.alyfobserver.app-main-64:/xml/website_widget_info.xml"
+    }
+]

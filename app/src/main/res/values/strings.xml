@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Alyf Observer</string>
+    <string name="accessibility_service_description">This service is used to detect when you are in a TikTok conversation.</string>
+</resources>

@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chocolate Data Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght @.npm/_cacache/index-v5/2c/d9/6d43a32f4d4ccc30d8584b9dfb142ccb6a4ea76f44008b816cfb4621e0eb;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* --- Material You Chocolate Tonal Palette --- */
+        :root {
+            --color-primary: #8D6E63; /* Medium Chocolate */
+            --color-on-primary: #FFFFFF;
+            --color-primary-container: #D7C4BB; /* Light Beige Container */
+            --color-on-primary-container: #201A18;
+
+            --color-background: #FFF8F6; /* Very Light Warm Background */
+            --color-surface: #FEFBF9; /* Slightly off-white Card Surface */
+            --color-on-surface: #201A18; /* Dark Brown Text */
+
+            /* Tonal adjustments for status (high contrast kept for accessibility) */
+            --color-error: #BA1A1A; 
+            --color-success: #006E2C; 
+            
+            --shadow-subtle: 0 1px 2px rgba(0,0,0,0.05); /* Very light, minimal elevation */
+            --shadow-focused: 0 3px 6px rgba(0,0,0,0.1); 
+        }
+
+        body { 
+            font-family: 'Roboto', sans-serif; 
+            margin: 0; 
+            background-color: var(--color-background); 
+            color: var(--color-on-surface); 
+        }
+
+        /* App Bar Header: Soft and Minimal */
+        h1 { 
+            padding: 16px 20px; 
+            margin-top: 0; 
+            /* Changed to use surface color for clear contrast against the main content area */
+            background-color: var(--color-surface); 
+            color: var(--color-on-surface);
+            font-size: 1.4rem;
+            font-weight: 500;
+            box-shadow: var(--shadow-subtle); 
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        #dataRowsContainer, #saveButton { margin: 16px; }
+
+        /* --- NOTE: #addRowButton CSS has been removed --- */
+
+        /* --- Minimalist Input/Select Styling (Underline Effect) --- */
+        .data-row input, .data-row select {
+            padding: 12px 0 12px 0; /* Padding adjustment for underline look */
+            border: none; /* Remove border */
+            border-bottom: 1px solid #dadce0; /* Subtle underline */
+            border-radius: 0; /* Square bottom corner */
+            min-height: 48px; 
+            box-sizing: border-box;
+            transition: border-bottom-color 0.2s, background-color 0.2s;
+            background-color: transparent; /* Transparent background to blend with card */
+            font-size: 16px;
+        }
+        
+        .data-row input:focus, .data-row select:focus {
+            border-bottom: 2px solid var(--color-primary); /* Primary color underline on focus */
+            background-color: #f7f7f7; /* Slight background shift on focus */
+            outline: none;
+        }
+
+        /* --- Card Row Styling (Shaded to Chocolate Theme) --- */
+        .data-row { 
+            display: flex; 
+            margin-bottom: 12px; 
+            align-items: center; 
+            /* CHANGE: Set row background to the light chocolate container color */
+            background-color: var(--color-primary-container);
+            border-radius: 16px; /* Slightly larger radius for Material You feel */
+            padding: 16px;
+            box-shadow: var(--shadow-subtle); 
+            transition: box-shadow 0.3s, background-color 0.3s;
+        }
+        .data-row:hover {
+            box-shadow: var(--shadow-focused);
+            /* Slightly darker hover state for visual feedback */
+            background-color: #CBB9B0; 
+        }
+
+        /* --- Base Button Styling --- */
+        .data-row button {
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            border-radius: 20px; /* Pill shape for Material You */
+            min-height: 40px;
+            transition: background-color 0.2s;
+            text-transform: capitalize;
+            font-size: 0.95rem;
+        }
+
+        /* --- Remove Button Styling (Icon Button Style) --- */
+        .remove-btn { 
+            padding: 8px; /* Compact padding */
+            width: 40px; 
+            height: 40px;
+            border-radius: 50%; /* Make it a circle */
+            background-color: transparent;
+            font-size: 1.5rem; /* Make the emoji bigger */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .remove-btn:hover { 
+            background-color: rgba(217, 48, 37, 0.1); /* Error-themed ripple effect */
+        }
+        
+        /* --- Save Button (Contained Elevated Action Button) --- */
+        #saveButton {
+            width: 100%;
+            max-width: 400px; 
+            display: block;
+            margin: 32px auto;
+            padding: 15px 20px;
+            background-color: var(--color-primary);
+            color: var(--color-on-primary);
+            border: none;
+            border-radius: 16px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-transform: capitalize;
+            box-shadow: var(--shadow-focused); 
+        }
+        #saveButton:hover { 
+            background-color: #79574D; 
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        /* --- Material You Toggle Switch Styling (Themed) --- */
+        .toggle-control {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            justify-content: flex-end; /* Align toggle to the right within its column */
+            min-height: 48px;
+            padding: 0;
+        }
+        .state-toggle-input {
+            display: none; 
+        }
+
+        .state-toggle-label {
+            position: relative;
+            display: block;
+            cursor: pointer;
+            width: 52px; 
+            height: 32px;
+            /* Inactive track for better visibility */
+            background-color: #DADCE0; 
+            border-radius: 16px;
+            transition: background-color 0.3s;
+            flex-shrink: 0;
+        }
+
+        .toggle-thumb {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 24px;
+            height: 24px;
+            background-color: var(--color-background); /* Light thumb */
+            border-radius: 50%;
+            transition: transform 0.3s, background-color 0.3s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Checked (Green/ON) state */
+        .state-toggle-input:checked + .state-toggle-label {
+            background-color: var(--color-primary); /* Dark Chocolate Track (Active) */
+        }
+
+        .state-toggle-input:checked + .state-toggle-label .toggle-thumb {
+            transform: translateX(20px); 
+            background-color: var(--color-surface);
+        }
+
+        /* --- Desktop Layout (Default: Flex Row) --- */
+        .header { display: flex; font-weight: 500; margin: 16px 16px 8px 16px; padding: 0 16px; color: #5f6368; }
+        
+        .col-type, .col-state, .col-remove, .col-link {
+            padding: 0 8px;
+            flex-shrink: 0; 
+        }
+
+        /* Column Widths */
+        .col-type { flex: 0 0 10%; } 
+        .col-link { flex: 1 1 68%; } 
+        .col-state { flex: 0 0 12%; } 
+        .col-remove { flex: 0 0 10%; padding-right: 0; }
+        
+        /* Header Column Widths and Alignment */
+        .header-col-type { flex: 0 0 10%; }
+        .header-col-link { flex: 1 1 68%; }
+        .header-col-state { flex: 0 0 12%; }
+        .header-col-actions { flex: 0 0 10%; text-align: right; } 
+
+        /* Hide mobile label on all screens now that layout is always horizontal */
+        .mobile-label { display: none; }
+        .full-width-input { width: 100%; }
+
+        /* --- Mobile Layout (Max-width: 768px) --- */
+        @.gradle/caches/8.10.2/transforms/3486a161859d926379ee753f4e46acd8/transformed/media-1.0.0-api.jar (max-width: 768px) {
+            h1 { text-align: left; font-size: 1.3rem; }
+            
+            #dataRowsContainer { 
+                padding: 0; 
+                overflow-x: hidden;
+            }
+            
+            .data-row {
+                width: auto; 
+                margin: 12px 16px;
+                padding: 16px;
+            }
+
+            .col-type, .col-state, .col-link, .col-remove {
+                /* Inherit fixed/flexible widths from desktop styles */
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Data Manager</h1>
+    <!-- The Add New Item button has been removed -->
+    <div class="header">
+        <div class="header-col-type">Type</div>
+        <div class="header-col-link">Link URL</div>
+        <div class="header-col-state">Status</div>
+        <div class="header-col-actions">Actions</div>
+    </div>
+    <div id="dataRowsContainer">
+        <!-- Data rows will be inserted here by JavaScript -->
+    </div>
+    <button id="saveButton">Save Changes</button>
+
+    <script>
+        // Global variables provided by the Canvas environment for Firebase (not used here but retained)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        let dataRows = [];
+
+        // Helper function to create a labeled field wrapper for responsive design
+        function createFieldWrapper(label, element, className) {
+            const wrapper = document.createElement('div');
+            wrapper.className = className;
+            
+            const labelEl = document.createElement('label');
+            labelEl.className = 'mobile-label';
+            labelEl.textContent = label;
+
+            wrapper.appendChild(labelEl);
+            wrapper.appendChild(element);
+            
+            return wrapper;
+        }
+
+        function renderRows() {
+            const container = document.getElementById('dataRowsContainer');
+            container.innerHTML = ''; // Clear existing rows
+
+            dataRows.forEach((row, index) => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'data-row';
+                
+                // Determine if this is the empty placeholder row (the last one)
+                const isPlaceholder = index === dataRows.length - 1 && row.link.trim() === '';
+
+                // --- 1. Type Select ---
+                const typeSelect = document.createElement('select');
+                typeSelect.className = 'full-width-input';
+                [1, 2, 3].forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type; 
+                    if (row.type === type) option.selected = true;
+                    typeSelect.appendChild(option);
+                });
+                typeSelect.onchange = (e) => {
+                    dataRows[index].type = parseInt(e.target.value);
+                    saveData();
+                };
+                // Disable type select on the empty placeholder row
+                if (isPlaceholder) typeSelect.disabled = true;
+
+                rowDiv.appendChild(createFieldWrapper('Type', typeSelect, 'col-type'));
+
+                // --- 2. Link Input ---
+                const linkInput = document.createElement('input');
+                linkInput.type = 'text';
+                linkInput.className = 'full-width-input';
+                linkInput.value = row.link;
+                linkInput.placeholder = isPlaceholder ? 'Add New Link URL...' : 'Enter Link URL';
+                linkInput.onchange = (e) => {
+                    dataRows[index].link = e.target.value;
+                    // Add a new empty row if the last one is being filled (retains inline add functionality)
+                    if (index === dataRows.length - 1 && e.target.value.trim() !== '') {
+                        addRowFromInputFill(); // This calls renderRows internally
+                    }
+                    saveData();
+                };
+                rowDiv.appendChild(createFieldWrapper('Link URL', linkInput, 'col-link'));
+
+                // --- 3. State Toggle (Green/Red) ---
+                const toggleControl = document.createElement('div');
+                toggleControl.className = 'toggle-control';
+                
+                const toggleInput = document.createElement('input');
+                toggleInput.type = 'checkbox';
+                toggleInput.id = `state-toggle-${index}`;
+                toggleInput.className = 'state-toggle-input';
+                
+                const isChecked = row.state === 'Green';
+                toggleInput.checked = isChecked;
+                
+                const toggleLabel = document.createElement('label');
+                toggleLabel.htmlFor = `state-toggle-${index}`;
+                toggleLabel.className = 'state-toggle-label';
+                
+                const toggleThumb = document.createElement('span');
+                toggleThumb.className = 'toggle-thumb';
+                toggleLabel.appendChild(toggleThumb);
+                
+                // Listener for the toggle switch
+                toggleInput.onchange = (e) => {
+                    const checked = e.target.checked;
+                    const newState = checked ? 'Green' : 'Red';
+                    dataRows[index].state = newState;
+                    saveData();
+                };
+
+                // Disable the toggle input and label on the placeholder row
+                if (isPlaceholder) {
+                    toggleInput.disabled = true;
+                    // Visually mark the placeholder status as disabled/neutral by dimming the label
+                    toggleLabel.style.opacity = 0.5;
+                }
+                
+                // Append elements to the control container (only the toggle switch components remain)
+                toggleControl.appendChild(toggleInput);
+                toggleControl.appendChild(toggleLabel);
+
+                rowDiv.appendChild(createFieldWrapper('Status', toggleControl, 'col-state'));
+
+
+                // --- 4. Remove Button (Now an Icon) ---
+                const removeButton = document.createElement('button');
+                removeButton.textContent = 'ðŸ”´'; // Using the requested red circle emoji
+                removeButton.className = 'remove-btn'; 
+                removeButton.onclick = () => {
+                    // Prevent removing the last empty placeholder row if there are valid rows
+                    if (!isPlaceholder && (dataRows.length > 1 || dataRows.filter(r => r.link.trim() !== '').length > 0)) {
+                        dataRows.splice(index, 1);
+                        saveData();
+                        renderRows();
+                    } else if (isPlaceholder && dataRows.length > 1) {
+                         // If it's the placeholder and not the only row, just clear its content
+                         dataRows[index].link = '';
+                         dataRows[index].type = 1;
+                         dataRows[index].state = 'Green';
+                         renderRows();
+                    }
+                };
+                
+                // If it's the placeholder row, change the button to 'Clear' or 'Disabled'
+                if (isPlaceholder) {
+                    removeButton.style.opacity = 0.5;
+                }
+                
+                // The remove button should not appear on the placeholder row on desktop
+                if (isPlaceholder && window.innerWidth > 768) {
+                    const placeholderDiv = document.createElement('div');
+                    placeholderDiv.style.flex = '0 0 10%'; // Match column width
+                    rowDiv.appendChild(placeholderDiv);
+                } else {
+                    rowDiv.appendChild(createFieldWrapper('Action', removeButton, 'col-remove'));
+                }
+
+                container.appendChild(rowDiv);
+            });
+        }
+
+        // Function: Called by input fill to ensure a *new* placeholder is ready
+        function addRowFromInputFill() {
+            ensurePlaceholderRow();
+            renderRows();
+        }
+
+        // Core function: Ensures the last row in the array is an empty placeholder
+        function ensurePlaceholderRow() {
+            // Check if the last row is non-existent or if its link is not empty
+            if (dataRows.length === 0 || dataRows[dataRows.length - 1].link.trim() !== '') {
+                 dataRows.push({ type: 1, link: '', state: 'Green' });
+            }
+        }
+        
+        // NOTE: The addNewRowButtonAction function and its binding have been removed.
+
+        function saveData() {
+            // Filter out the empty placeholder row before saving
+            const dataToSave = dataRows.filter(row => row.link.trim() !== ''); 
+            
+            // This function will call the Android interface to save data
+            if (window.Android) {
+                window.Android.submitData(JSON.stringify(dataToSave));
+            } else {
+                console.log("Android interface not available. Data to save:", JSON.stringify(dataToSave));
+            }
+        }
+
+        function loadData() {
+            const exampleData = [
+                { type: 1, link: 'https://gemini.com/marketing-asset', state: 'Green' },
+                { type: 2, link: 'https://github.com/project-spec', state: 'Red' },
+                { type: 3, link: 'https://jira.com/task-55', state: 'Green' }
+            ];
+
+            let loadedData = null;
+
+            if (window.Android) {
+                try {
+                    const dataString = window.Android.loadData();
+                    if (dataString) {
+                        loadedData = JSON.parse(dataString);
+                    }
+                } catch (e) {
+                    console.error("Error loading or parsing data from Android:", e);
+                }
+            }
+
+            if (loadedData && loadedData.length > 0) {
+                dataRows = loadedData;
+                console.log("Data loaded from Android.");
+            } else {
+                // If no data loaded (or no Android interface/empty data), use example data
+                dataRows = exampleData;
+                console.log("Using example data.");
+            }
+            
+            ensurePlaceholderRow();
+            renderRows();
+        }
+
+        document.getElementById('saveButton').onclick = saveData;
+
+        // Initial load
+        window.onload = () => {
+            loadData();
+        };
+        
+        // Expose a function for Android to call to update data in the WebView
+        window.updateDataFromAndroid = (jsonData) => {
+            dataRows = JSON.parse(jsonData);
+            ensurePlaceholderRow();
+            renderRows();
+        };
+    </script>
+</body>
+</html>
