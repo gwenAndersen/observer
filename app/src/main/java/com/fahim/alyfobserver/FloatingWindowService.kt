@@ -44,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -369,7 +370,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private fun resetIdleTimer() {
         isIdle.value = false
         idleHandler.removeCallbacks(idleRunnable)
-        idleHandler.postDelayed(idleRunnable, 3000) // 3 seconds
+        idleHandler.postDelayed(idleRunnable, 5000) // 5 seconds
     }
 
     private fun saveDataRows() {
@@ -451,7 +452,16 @@ fun OverlayList(
     val size by animateDpAsState(if (isIdle) 40.dp else 56.dp)
 
     if (showTextLayout) {
-        TextLayout(onPasteText = onPasteText, onToggleTextLayout = onToggleTextLayout, onInputFocusChanged = onInputFocusChanged)
+        TextLayout(
+            onPasteText = onPasteText,
+            onToggleTextLayout = onToggleTextLayout,
+            onInputFocusChanged = onInputFocusChanged,
+            isIdle = isIdle,
+            alpha = alpha,
+            size = size,
+            onRestoreLayout = onRestoreLayout,
+            currentLayoutState = currentLayoutState
+        )
     } else if (showDataLayout) {
         DataLayout(dataRows = dataRows, onToggleDataLayout = onToggleDataLayout, saveData = saveData, onLinkClick = onLinkClick, onInputFocusChanged = onInputFocusChanged)
     } else if (showWebViewLayout) {
@@ -472,11 +482,7 @@ fun OverlayList(
                     onRestoreLayout(currentLayoutState)
                 }
         ) {
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
-                exit = fadeOut(animationSpec = tween(300)) + shrinkVertically(animationSpec = tween(300))
-            ) {
+            if (isExpanded) {
                 Column { // Need to wrap the content in a Column or similar
                     FloatingActionButton(
                         onClick = {
@@ -536,7 +542,11 @@ fun OverlayList(
                 onClick = onToggleExpand,
                 modifier = Modifier.size(size)
             ) {
-                Icon(if (isExpanded) Icons.Default.Close else Icons.Default.Add, contentDescription = "Toggle")
+                if (isIdle && currentLayoutState == OverlayLayoutState.TEXT_LAYOUT) {
+                    Icon(Icons.Default.ContentPaste, contentDescription = "Restore Clipboard")
+                } else {
+                    Icon(if (isExpanded) Icons.Default.Close else Icons.Default.Add, contentDescription = "Toggle")
+                }
             }
         }
     }
@@ -566,45 +576,69 @@ fun WebViewLayout(context: Context, onToggleWebViewLayout: () -> Unit, onSaveDat
 }
 
 @Composable
-fun TextLayout(onPasteText: (String) -> Unit, onToggleTextLayout: () -> Unit, onInputFocusChanged: (Boolean) -> Unit) {
-    Column(
-        modifier = Modifier.padding(16.dp)
-    ) {
-        val textToPaste = "⭐ ⭐\nআর অপেক্ষা নয়! আপনার ভিডিওকে দ্রুত ভাইরাল করে হাজার বা লক্ষ মানুষের কাছে পৌঁছে দিন। আমাদের বিশেষ প্যাকেজ-এর মাধ্যমে আপনার TikTok প্রোফাইল রাতারাতি জনপ্রিয় হবে for you তে।\n\n🎈আমাদের সফলতার প্যাকেজগুলো :\n\n🚀 ১ দিনের বুস্ট: মাত্র ১৫০ টাকা  আপনার ভিডিওতে পাচ্ছেন ১,২৫০+ লাইক এবং ৩,৫০০+ থেকে ১৬,৬০০+ ভিউ। \n\n✨ ২ দিনের বুস্ট: মাত্র ৩০০ টাকা আপনার ভিডিওতে পাচ্ছেন ২,৫০০+ লাইক এবং ৬,৯০০+ থেকে ৩৩,৩০০+ ভিউ। \n\n💎৩ দিনের বুস্ট: মাত্র ৪৫০ টাকা  আপনার ভিডিওতে পাচ্ছেন ৩,৭৫০+ লাইক এবং ১০,৪০০+ থেকে ৪৯,৯০০+ ভিউ। \nআপনার সুযোগ হাতছাড়া করবেন না!"
-        // Text composable removed as per user request
-        Spacer(modifier = Modifier.height(16.dp))
+fun TextLayout(
+    onPasteText: (String) -> Unit,
+    onToggleTextLayout: () -> Unit,
+    onInputFocusChanged: (Boolean) -> Unit,
+    isIdle: Boolean,
+    alpha: Float,
+    size: Dp,
+    onRestoreLayout: (OverlayLayoutState) -> Unit,
+    currentLayoutState: OverlayLayoutState
+) {
+    if (isIdle) {
         FloatingActionButton(
-            onClick = { onPasteText(textToPaste) }
+            onClick = { onRestoreLayout(currentLayoutState) },
+            modifier = Modifier
+                .padding(16.dp)
+                .alpha(alpha)
+                .size(size)
         ) {
-            Icon(Icons.Default.Star, contentDescription = "Paste Text")
+            Icon(Icons.Default.ContentPaste, contentDescription = "Restore Clipboard")
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        FloatingActionButton(
-            onClick = { onPasteText("01855883948\n✅[বিকাশ/নগদ]✅\n\n🤗পার্সোনাল নাম্বার! \n💸 সেন্ড মানি করুন! \n📸 স্ক্রিনশট দিন! \n⬇️ লাস্ট ৪ সংখ্যা দিন! \n\n\n❌ফ্লাক্সিলোড দিলে পেমেন্ট বাতিল❌") }
+    } else {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .alpha(alpha)
         ) {
-            Text("💵")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        FloatingActionButton(
-            onClick = { onPasteText("আপনি টাকা পাঠাবেন এবং ভিডিও লিংক দিবেন, বাকিটা আমাদের কাজ") }
-        ) {
-            Text("1️⃣")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        FloatingActionButton(
-            onClick = { onPasteText("ভাই আমরা ওরকম না বিশ্বাস করতে পারেন, আমাদের অনেক কাস্টমার আজ পর্যন্ত কেউ এ কথা বলতে পারেনি যে আমরা কাউকে ঠকিয়েছি") }
-        ) {
-            Text("⚪")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        FloatingActionButton(
-            onClick = { onPasteText("২০ থেকে ৩০ মিনিট পর শুরু হয়ে যাবে ২৪ ঘন্টা পর্যন্ত আসবে এর ভেতর সবকিছু এসে যাবে") }
-        ) {
-            Text("🛑")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        FloatingActionButton(onClick = onToggleTextLayout) {
-            Icon(Icons.Default.Close, contentDescription = "Close Text Layout")
+            val textToPaste = "⭐ ⭐\nআর অপেক্ষা নয়! আপনার ভিডিওকে দ্রুত ভাইরাল করে হাজার বা লক্ষ মানুষের কাছে পৌঁছে দিন। আমাদের বিশেষ প্যাকেজ-এর মাধ্যমে আপনার TikTok প্রোফাইল রাতারাতি জনপ্রিয় হবে for you তে।\n\n🎈আমাদের সফলতার প্যাকেজগুলো :\n\n🚀 ১ দিনের বুস্ট: মাত্র ১৫০ টাকা  আপনার ভিডিওতে পাচ্ছেন ১,২৫০+ লাইক এবং ৩,৫০০+ থেকে ১৬,৬০০+ ভিউ। \n\n✨ ২ দিনের বুস্ট: মাত্র ৩০০ টাকা আপনার ভিডিওতে পাচ্ছেন ২,৫০০+ লাইক এবং ৬,৯০০+ থেকে ৩৩,৩০০+ ভিউ। \n\n💎৩ দিনের বুস্ট: মাত্র ৪৫০ টাকা  আপনার ভিডিওতে পাচ্ছেন ৩,৭৫০+ লাইক এবং ১০,৪০০+ থেকে ৪৯,৯০০+ ভিউ। \nআপনার সুযোগ হাতছাড়া করবেন না!"
+            // Text composable removed as per user request
+            Spacer(modifier = Modifier.height(16.dp))
+            FloatingActionButton(
+                onClick = { onPasteText(textToPaste) },
+                modifier = Modifier.size(size)
+            ) {
+                Icon(Icons.Default.Star, contentDescription = "Paste Text")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            FloatingActionButton(
+                onClick = { onPasteText("01855883948\n✅[বিকাশ/নগদ]✅\n\n🤗পার্সোনাল নাম্বার! \n💸 সেন্ড মানি করুন! \n📸 স্ক্রিনশট দিন! \n⬇️ লাস্ট ৪ সংখ্যা দিন! \n\n\n❌ফ্লাক্সিলোড দিলে পেমেন্ট বাতিল❌") }
+            ) {
+                Text("💵")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            FloatingActionButton(
+                onClick = { onPasteText("আপনি টাকা পাঠাবেন এবং ভিডিও লিংক দিবেন, বাকিটা আমাদের কাজ") }
+            ) {
+                Text("1️⃣")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            FloatingActionButton(
+                onClick = { onPasteText("ভাই আমরা ওরকম না বিশ্বাস করতে পারেন, আমাদের অনেক কাস্টমার আজ পর্যন্ত কেউ এ কথা বলতে পারেনি যে আমরা কাউকে ঠকিয়েছি") }
+            ) {
+                Text("⚪")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            FloatingActionButton(
+                onClick = { onPasteText("২০ থেকে ৩০ মিনিট পর শুরু হয়ে যাবে ২৪ ঘন্টা পর্যন্ত আসবে এর ভেতর সবকিছু এসে যাবে") }
+            ) {
+                Text("🛑")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            FloatingActionButton(onClick = onToggleTextLayout) {
+                Icon(Icons.Default.Close, contentDescription = "Close Text Layout")
+            }
         }
     }
 }
