@@ -40,6 +40,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.ButtonCustomizationActivity"
+            android:exported="false" />
+
+        
+
+        
+
         <receiver android:name=".WebsiteWidgetProvider" android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

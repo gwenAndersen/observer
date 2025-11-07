@@ -38,18 +38,12 @@ import androidx.compose.ui.platform.ClipboardManager
 
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.onFocusChanged
@@ -67,12 +61,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -81,20 +72,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.IconButton
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.google.accompanist.web.WebView
 import android.webkit.WebView
 import com.google.accompanist.web.rememberWebViewState
@@ -113,12 +99,32 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlin.math.roundToInt
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.lifecycle.LifecycleRegistry
+import android.os.Bundle
 
-enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT }
+
+
+enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT, HEART_LAYOUT }
+
+class ServiceLifecycleOwner : LifecycleOwner {
+    private val registry = LifecycleRegistry(this)
+
+    override val lifecycle: Lifecycle get() = registry
+
+    fun handleLifecycleEvent(event: Lifecycle.Event) {
+        registry.handleLifecycleEvent(event)
+    }
+}
 
 class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStateRegistryOwner {
-
-    
 
     private var webViewInstance: WebView? = null
     private lateinit var windowManager: WindowManager
@@ -129,6 +135,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private var showTextLayout = mutableStateOf(false)
     private var showDataLayout = mutableStateOf(false)
     private var showWebViewLayout = mutableStateOf(false)
+    private var showHeartLayout = mutableStateOf(false)
     private var currentLayoutState = mutableStateOf(OverlayLayoutState.MAIN)
     private var isOverlayInputFocused = mutableStateOf(false)
     private val dataRows = mutableStateListOf<DataRow>()
@@ -147,6 +154,9 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private lateinit var _viewModelStore: ViewModelStore
     private lateinit var savedStateRegistryController: SavedStateRegistryController
     private lateinit var onBackPressedDispatcher: OnBackPressedDispatcher
+    private var clipboardButtonLayout by mutableStateOf<List<ButtonConfig>>(emptyList())
+    private var heartButtonLayout by mutableStateOf<List<ButtonConfig>>(emptyList())
+    private lateinit var lifecycleOwner: ServiceLifecycleOwner
 
     override val viewModelStore: ViewModelStore
         get() = _viewModelStore
@@ -154,21 +164,28 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
 
+    private val layoutUpdateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.fahim.alyfobserver.LAYOUT_UPDATED") {
+                Log.d("FloatingWindowService", "Received layout update broadcast")
+                lifecycleScope.launch {
+                    clipboardButtonLayout = DataStoreManager.loadButtonLayout(this@FloatingWindowService)
+                    heartButtonLayout = DataStoreManager.loadHeartButtonLayout(this@FloatingWindowService)
+                }
+            }
+        }
+    }
+
     private val globalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
         val rect = Rect()
         overlayView?.getWindowVisibleDisplayFrame(rect)
         val keyboardHeight = if (rect.bottom > screenHeight) 0 else screenHeight - rect.bottom
 
-        
-        
-
         if (keyboardHeight > screenHeight * 0.15) { // If keyboard is likely open (more than 15% of screen height)
             params.y = rect.bottom - (overlayView?.height ?: 0) - 50 // Adjust Y to be above keyboard
-            
         } else {
             // Keyboard is closed, restore last known manual Y position
             params.y = lastYPosition
-            
         }
         windowManager.updateViewLayout(overlayView, params)
     }
@@ -187,13 +204,20 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         super.onCreate()
         Log.d("FloatingWindowService", "onCreate: Service is being created.")
 
+        lifecycleScope.launch {
+            clipboardButtonLayout = DataStoreManager.loadButtonLayout(this@FloatingWindowService)
+            heartButtonLayout = DataStoreManager.loadHeartButtonLayout(this@FloatingWindowService)
+        }
+
         _viewModelStore = ViewModelStore()
         savedStateRegistryController = SavedStateRegistryController.create(this)
         savedStateRegistryController.performRestore(null)
         onBackPressedDispatcher = OnBackPressedDispatcher { /* Handle back press if needed */ }
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        dataRows.addAll(DataStore.load(this)) // Re-enable loading saved data
+        lifecycleScope.launch {
+            dataRows.addAll(DataStoreManager.load(this@FloatingWindowService))
+        } // Re-enable loading saved data
         updateWebViewData() // Update WebView with loaded data
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -212,136 +236,15 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         intentFilter.addAction(MyAccessibilityService.ACTION_HIDE_OVERLAY)
         Log.d("FloatingWindowService", "onCreate: Registering broadcast receiver.")
         registerReceiver(broadcastReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
+
+        
     }
+
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        Log.d("FloatingWindowService", "onStartCommand: Service is started.")
+        Log.d("FloatingWindowService", "onStartCommand: Service is started.\n")
         return START_NOT_STICKY
-    }
-
-    private fun showOverlay() {
-        Log.d("FloatingWindowService", "Attempting to show overlay")
-        if (overlayView != null) return
-
-            resetIdleTimer()
-
-        overlayView = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@FloatingWindowService)
-            setViewTreeViewModelStoreOwner(this@FloatingWindowService)
-            setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
-
-            val backPressedOwner = ServiceBackPressedDispatcherOwner(onBackPressedDispatcher, this@FloatingWindowService.lifecycle)
-
-            
-
-            setContent {
-                CompositionLocalProvider(
-                    LocalOnBackPressedDispatcherOwner provides backPressedOwner
-                ) {
-                    NewAndroidProjectTheme { // Apply the theme here
-                        OverlayList(
-                            context = this@FloatingWindowService,
-                            isIdle = isIdle.value,
-                            isExpanded = isExpanded.value,
-                            showTextLayout = showTextLayout.value,
-                            showDataLayout = showDataLayout.value,
-                            showWebViewLayout = showWebViewLayout.value,
-                            dataRows = dataRows,
-                            onClose = {
-                                val intent = Intent(MyAccessibilityService.ACTION_HIDE_OVERLAY).apply {
-                                    setPackage(this@FloatingWindowService.packageName)
-                                }
-                                sendBroadcast(intent)
-                                resetIdleTimer()
-                            },
-                            onDrag = { dragAmount ->
-                                params.x += dragAmount.x.toInt()
-                                params.y += dragAmount.y.toInt()
-                                lastYPosition = params.y // Update lastYPosition on drag
-                                windowManager.updateViewLayout(overlayView, params)
-                                isIdle.value = false
-                                isExpanded.value = false
-                                resetIdleTimer()
-                            },
-                            onWriteClick = {
-                                val intent = Intent(MyAccessibilityService.ACTION_FIND_AND_WRITE).apply {
-                                    setPackage(this@FloatingWindowService.packageName)
-                                }
-                                sendBroadcast(intent)
-                                resetIdleTimer()
-                            },
-                            onDumpClick = {
-                                val intent = Intent(MyAccessibilityService.ACTION_DUMP_UI_TREE).apply {
-                                    setPackage(this@FloatingWindowService.packageName)
-                                }
-                                sendBroadcast(intent)
-                                resetIdleTimer()
-                            },
-                            onToggleExpand = {
-                                isExpanded.value = !isExpanded.value
-                                resetIdleTimer()
-                            },
-                            onToggleTextLayout = {
-                                showTextLayout.value = !showTextLayout.value
-                                currentLayoutState.value = if (showTextLayout.value) OverlayLayoutState.TEXT_LAYOUT else OverlayLayoutState.MAIN
-                                resetIdleTimer()
-                            },
-                            onToggleDataLayout = {
-                                showDataLayout.value = !showDataLayout.value
-                                currentLayoutState.value = if (showDataLayout.value) OverlayLayoutState.DATA_LAYOUT else OverlayLayoutState.MAIN
-                                resetIdleTimer()
-                            },
-                            onToggleWebViewLayout = {
-                                showWebViewLayout.value = !showWebViewLayout.value
-                                currentLayoutState.value = if (showWebViewLayout.value) OverlayLayoutState.WEB_VIEW_LAYOUT else OverlayLayoutState.MAIN
-                                resetIdleTimer()
-                            },
-                            onPasteText = { text ->
-                                val intent = Intent(MyAccessibilityService.ACTION_PASTE_TEXT).apply {
-                                    putExtra("textToPaste", text)
-                                    setPackage(this@FloatingWindowService.packageName)
-                                }
-                                sendBroadcast(intent)
-                                resetIdleTimer()
-                            },
-                            saveData = { saveDataRows() },
-                            onLinkClick = { link -> handleLinkClick(link) },
-                            currentLayoutState = currentLayoutState.value,
-                            onRestoreLayout = { state ->
-                                showTextLayout.value = (state == OverlayLayoutState.TEXT_LAYOUT)
-                                showDataLayout.value = (state == OverlayLayoutState.DATA_LAYOUT)
-                                showWebViewLayout.value = (state == OverlayLayoutState.WEB_VIEW_LAYOUT)
-                                currentLayoutState.value = state
-                                resetIdleTimer()
-                            },
-                            onSaveDataFromWebView = { jsonData ->
-                                val newDataRows = kotlinx.serialization.json.Json.decodeFromString<List<DataRow>>(jsonData)
-                                dataRows.clear()
-                                dataRows.addAll(newDataRows)
-                                saveDataRows()
-                            },
-                            onLoadDataForWebView = {
-                                kotlinx.serialization.json.Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(DataRow.serializer()), dataRows.toList())
-                            },
-                            onWebViewCreated = { webView -> webViewInstance = webView },
-                            onInputFocusChanged = { focused ->
-                                isOverlayInputFocused.value = focused
-                                updateOverlayFlags()
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        windowManager.addView(overlayView, params)
-
-        // Keyboard detection logic
-        overlayView?.viewTreeObserver?.addOnGlobalLayoutListener(globalLayoutListener)
-        if (screenHeight == 0) {
-            screenHeight = resources.displayMetrics.heightPixels
-        }
     }
 
     private fun handleLinkClick(link: String) {
@@ -361,20 +264,19 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 Log.e("FloatingWindowService", "Could not find app for package: $link")
                 // Optionally, show a toast to the user
             }
-        } else {
-            Log.d("FloatingWindowService", "Unknown link type: $link")
-            // Optionally, show a toast to the user
         }
     }
 
     private fun resetIdleTimer() {
         isIdle.value = false
         idleHandler.removeCallbacks(idleRunnable)
-        idleHandler.postDelayed(idleRunnable, 5000) // 5 seconds
+        idleHandler.postDelayed(idleRunnable, 20000) // 20 seconds
     }
 
     private fun saveDataRows() {
-        DataStore.save(this, dataRows)
+        lifecycleScope.launch {
+            DataStoreManager.save(this@FloatingWindowService, dataRows)
+        }
         updateWebViewData() // Call to update WebView after saving
     }
 
@@ -409,6 +311,104 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         windowManager.updateViewLayout(overlayView, params)
     }
 
+    private fun showOverlay() {
+        Log.d("FloatingWindowService", "showOverlay: Attempting to show overlay.")
+        if (overlayView == null) {
+            overlayView = ComposeView(this).apply {
+                // Set up LifecycleOwner, ViewModelStoreOwner, and SavedStateRegistryOwner
+                lifecycleOwner = ServiceLifecycleOwner()
+                
+                lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+                lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_START)
+                lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+                setViewTreeLifecycleOwner(lifecycleOwner)
+                setViewTreeViewModelStoreOwner(this@FloatingWindowService)
+                setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+
+                setContent {
+                    CompositionLocalProvider(
+                        LocalOnBackPressedDispatcherOwner provides ServiceBackPressedDispatcherOwner(
+                            onBackPressedDispatcher,
+                            lifecycleOwner.lifecycle
+                        )
+                    ) {
+                        NewAndroidProjectTheme {
+                            MaterialTheme {
+                                OverlayList(
+                                    context = this@FloatingWindowService,
+                                    isIdle = isIdle.value,
+                                    isExpanded = isExpanded,
+                                    showTextLayout = showTextLayout.value,
+                                    showDataLayout = showDataLayout.value,
+                                    showWebViewLayout = showWebViewLayout.value,
+                                    showHeartLayout = showHeartLayout.value,
+                                    dataRows = dataRows,
+                                    clipboardButtonLayout = clipboardButtonLayout,
+                                    heartButtonLayout = heartButtonLayout,
+                                    onClose = { hideOverlay() },
+                                    onDrag = { dragAmount ->
+                                        params.x = (params.x + dragAmount.x).roundToInt()
+                                        params.y = (params.y + dragAmount.y).roundToInt()
+                                        lastYPosition = params.y // Update last known Y position
+                                        windowManager.updateViewLayout(this, params)
+                                    },
+                                    onWriteClick = { showTextLayout.value = true; currentLayoutState.value = OverlayLayoutState.TEXT_LAYOUT },
+                                    onDumpClick = { /* TODO: Implement dump UI */ },
+                                    onToggleExpand = {
+                                        isExpanded.value = !isExpanded.value
+                                        Log.d("FloatingWindowService", "isExpanded toggled to: ${isExpanded.value}")
+                                        resetIdleTimer()
+                                    },
+                                    onToggleTextLayout = { showTextLayout.value = !showTextLayout.value; currentLayoutState.value = if (showTextLayout.value) OverlayLayoutState.TEXT_LAYOUT else OverlayLayoutState.MAIN },
+                                    onToggleDataLayout = { showDataLayout.value = !showDataLayout.value; currentLayoutState.value = if (showDataLayout.value) OverlayLayoutState.DATA_LAYOUT else OverlayLayoutState.MAIN },
+                                    onToggleWebViewLayout = { showWebViewLayout.value = !showWebViewLayout.value; currentLayoutState.value = if (showWebViewLayout.value) OverlayLayoutState.WEB_VIEW_LAYOUT else OverlayLayoutState.MAIN },
+                                    onToggleHeartLayout = { showHeartLayout.value = !showHeartLayout.value; currentLayoutState.value = if (showHeartLayout.value) OverlayLayoutState.HEART_LAYOUT else OverlayLayoutState.MAIN },
+                                    onPasteText = { text -> pasteText(text) },
+                                    saveData = { saveDataRows() },
+                                    onLinkClick = { link -> handleLinkClick(link) },
+                                    currentLayoutState = currentLayoutState.value,
+                                    onRestoreLayout = { state ->
+                                        isIdle.value = false
+                                        isExpanded.value = true
+                                        when (state) {
+                                            OverlayLayoutState.MAIN -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false }
+                                            OverlayLayoutState.TEXT_LAYOUT -> { showTextLayout.value = true; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false }
+                                            OverlayLayoutState.DATA_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = true; showWebViewLayout.value = false; showHeartLayout.value = false }
+                                            OverlayLayoutState.WEB_VIEW_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = true; showHeartLayout.value = false }
+                                            OverlayLayoutState.HEART_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = true }
+                                        }
+                                        currentLayoutState.value = state
+                                        resetIdleTimer()
+                                    },
+                                    onSaveDataFromWebView = { jsonData ->
+                                        lifecycleScope.launch {
+                                            val newDataRows = Json.decodeFromString(ListSerializer(DataRow.serializer()), jsonData)
+                                            dataRows.clear()
+                                            dataRows.addAll(newDataRows)
+                                            saveDataRows()
+                                        }
+                                    },
+                                    onLoadDataForWebView = { ->
+                                        Json.encodeToString(ListSerializer(DataRow.serializer()), dataRows.toList())
+                                    },
+                                    onWebViewCreated = { webView -> webViewInstance = webView },
+                                    onInputFocusChanged = { isFocused ->
+                                        isOverlayInputFocused.value = isFocused
+                                        updateOverlayFlags()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            windowManager.addView(overlayView, params)
+            overlayView?.viewTreeObserver?.addOnGlobalLayoutListener(globalLayoutListener)
+            screenHeight = windowManager.defaultDisplay.height // Initialize screenHeight
+            resetIdleTimer()
+        }
+    }
+
     private fun hideOverlay() {
         Log.d("FloatingWindowService", "hideOverlay: Attempting to hide overlay.")
         idleHandler.removeCallbacks(idleRunnable)
@@ -418,18 +418,34 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
             Log.d("FloatingWindowService", "hideOverlay: Overlay view removed successfully.")
         }
         overlayView = null
+        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
     }
+
+    private fun pasteText(text: String) {
+        val intent = Intent(MyAccessibilityService.ACTION_PASTE_TEXT).apply {
+            putExtra("textToPaste", text)
+            setPackage(packageName) // Make the intent explicit
+        }
+        sendBroadcast(intent)
+        Log.d("FloatingWindowService", "Sent broadcast to paste text: $text")
+    }
+
 }
 
 @Composable
 fun OverlayList(
     context: Context,
     isIdle: Boolean,
-    isExpanded: Boolean,
+    isExpanded: MutableState<Boolean>,
     showTextLayout: Boolean,
     showDataLayout: Boolean,
     showWebViewLayout: Boolean,
+    showHeartLayout: Boolean,
     dataRows: SnapshotStateList<DataRow>,
+    clipboardButtonLayout: List<ButtonConfig>,
+    heartButtonLayout: List<ButtonConfig>,
     onClose: () -> Unit,
     onDrag: (Offset) -> Unit,
     onWriteClick: () -> Unit,
@@ -438,6 +454,7 @@ fun OverlayList(
     onToggleTextLayout: () -> Unit,
     onToggleDataLayout: () -> Unit,
     onToggleWebViewLayout: () -> Unit,
+    onToggleHeartLayout: () -> Unit,
     onPasteText: (String) -> Unit,
     saveData: () -> Unit,
     onLinkClick: (String) -> Unit,
@@ -460,10 +477,23 @@ fun OverlayList(
             alpha = alpha,
             size = size,
             onRestoreLayout = onRestoreLayout,
-            currentLayoutState = currentLayoutState
+            currentLayoutState = currentLayoutState,
+            buttonLayout = clipboardButtonLayout
         )
     } else if (showDataLayout) {
         DataLayout(dataRows = dataRows, onToggleDataLayout = onToggleDataLayout, saveData = saveData, onLinkClick = onLinkClick, onInputFocusChanged = onInputFocusChanged)
+    } else if (showHeartLayout) {
+        TextLayout(
+            onPasteText = onPasteText,
+            onToggleTextLayout = onToggleHeartLayout, // Use the new toggle function
+            onInputFocusChanged = onInputFocusChanged,
+            isIdle = isIdle,
+            alpha = alpha,
+            size = size,
+            onRestoreLayout = onRestoreLayout,
+            currentLayoutState = currentLayoutState,
+            buttonLayout = heartButtonLayout // Use the new button layout
+        )
     } else if (showWebViewLayout) {
                                         WebViewLayout(context = context, onToggleWebViewLayout = onToggleWebViewLayout, onSaveDataFromWebView = onSaveDataFromWebView, onLoadDataForWebView = onLoadDataForWebView, onWebViewCreated = onWebViewCreated)
     } else {
@@ -482,7 +512,7 @@ fun OverlayList(
                     onRestoreLayout(currentLayoutState)
                 }
         ) {
-            if (isExpanded) {
+            if (isExpanded.value) {
                 Column { // Need to wrap the content in a Column or similar
                     FloatingActionButton(
                         onClick = {
@@ -522,6 +552,13 @@ fun OverlayList(
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     FloatingActionButton(
+                        onClick = onToggleHeartLayout,
+                        modifier = Modifier.size(size)
+                    ) {
+                        Icon(Icons.Default.Favorite, contentDescription = "Show Paste Layout")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    FloatingActionButton(
                         onClick = onToggleDataLayout,
                         modifier = Modifier.size(size)
                     ) {
@@ -545,7 +582,7 @@ fun OverlayList(
                 if (isIdle && currentLayoutState == OverlayLayoutState.TEXT_LAYOUT) {
                     Icon(Icons.Default.ContentPaste, contentDescription = "Restore Clipboard")
                 } else {
-                    Icon(if (isExpanded) Icons.Default.Close else Icons.Default.Add, contentDescription = "Toggle")
+                    Icon(if (isExpanded.value) Icons.Default.Close else Icons.Default.Add, contentDescription = "Toggle")
                 }
             }
         }
@@ -584,7 +621,8 @@ fun TextLayout(
     alpha: Float,
     size: Dp,
     onRestoreLayout: (OverlayLayoutState) -> Unit,
-    currentLayoutState: OverlayLayoutState
+    currentLayoutState: OverlayLayoutState,
+    buttonLayout: List<ButtonConfig>
 ) {
     if (isIdle) {
         FloatingActionButton(
@@ -602,41 +640,39 @@ fun TextLayout(
                 .padding(16.dp)
                 .alpha(alpha)
         ) {
-            val textToPaste = "⭐ ⭐\nআর অপেক্ষা নয়! আপনার ভিডিওকে দ্রুত ভাইরাল করে হাজার বা লক্ষ মানুষের কাছে পৌঁছে দিন। আমাদের বিশেষ প্যাকেজ-এর মাধ্যমে আপনার TikTok প্রোফাইল রাতারাতি জনপ্রিয় হবে for you তে।\n\n🎈আমাদের সফলতার প্যাকেজগুলো :\n\n🚀 ১ দিনের বুস্ট: মাত্র ১৫০ টাকা  আপনার ভিডিওতে পাচ্ছেন ১,২৫০+ লাইক এবং ৩,৫০০+ থেকে ১৬,৬০০+ ভিউ। \n\n✨ ২ দিনের বুস্ট: মাত্র ৩০০ টাকা আপনার ভিডিওতে পাচ্ছেন ২,৫০০+ লাইক এবং ৬,৯০০+ থেকে ৩৩,৩০০+ ভিউ। \n\n💎৩ দিনের বুস্ট: মাত্র ৪৫০ টাকা  আপনার ভিডিওতে পাচ্ছেন ৩,৭৫০+ লাইক এবং ১০,৪০০+ থেকে ৪৯,৯০০+ ভিউ। \nআপনার সুযোগ হাতছাড়া করবেন না!"
-            // Text composable removed as per user request
-            Spacer(modifier = Modifier.height(16.dp))
-            FloatingActionButton(
-                onClick = { onPasteText(textToPaste) },
-                modifier = Modifier.size(size)
-            ) {
-                Icon(Icons.Default.Star, contentDescription = "Paste Text")
+            val buttons = buttonLayout.toMutableList()
+            while (buttons.isNotEmpty()) {
+                val button = buttons.removeFirst()
+                if (button.id == "paste_star" && buttons.firstOrNull()?.id == "paste_sparkle_combo") {
+                    val secondButton = buttons.removeFirst()
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        FloatingActionButton(
+                            onClick = { onPasteText(button.text) },
+                        ) {
+                            Text(button.emoji ?: "")
+                        }
+                        FloatingActionButton(
+                            onClick = { onPasteText(secondButton.text) },
+                        ) {
+                            Text(secondButton.emoji ?: "")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                } else {
+                    FloatingActionButton(
+                        onClick = { onPasteText(button.text) },
+                    ) {
+                        Text(button.emoji ?: "")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+
             FloatingActionButton(
-                onClick = { onPasteText("01855883948\n✅[বিকাশ/নগদ]✅\n\n🤗পার্সোনাল নাম্বার! \n💸 সেন্ড মানি করুন! \n📸 স্ক্রিনশট দিন! \n⬇️ লাস্ট ৪ সংখ্যা দিন! \n\n\n❌ফ্লাক্সিলোড দিলে পেমেন্ট বাতিল❌") }
+                onClick = onToggleTextLayout,
             ) {
-                Text("💵")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            FloatingActionButton(
-                onClick = { onPasteText("আপনি টাকা পাঠাবেন এবং ভিডিও লিংক দিবেন, বাকিটা আমাদের কাজ") }
-            ) {
-                Text("1️⃣")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            FloatingActionButton(
-                onClick = { onPasteText("ভাই আমরা ওরকম না বিশ্বাস করতে পারেন, আমাদের অনেক কাস্টমার আজ পর্যন্ত কেউ এ কথা বলতে পারেনি যে আমরা কাউকে ঠকিয়েছি") }
-            ) {
-                Text("⚪")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            FloatingActionButton(
-                onClick = { onPasteText("২০ থেকে ৩০ মিনিট পর শুরু হয়ে যাবে ২৪ ঘন্টা পর্যন্ত আসবে এর ভেতর সবকিছু এসে যাবে") }
-            ) {
-                Text("🛑")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            FloatingActionButton(onClick = onToggleTextLayout) {
                 Icon(Icons.Default.Close, contentDescription = "Close Text Layout")
             }
         }

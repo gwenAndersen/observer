@@ -46,6 +46,10 @@ class MainActivity : ComponentActivity() {
                             val intent = Intent(MyAccessibilityService.ACTION_SHOW_OVERLAY)
                             intent.setPackage(packageName)
                             sendBroadcast(intent)
+                        },
+                        onCustomizeButtonClick = {
+                            val intent = Intent(this@MainActivity, com.fahim.alyfobserver.ui.ButtonCustomizationActivity::class.java)
+                            startActivity(intent)
                         }
                     )
                 }
@@ -74,7 +78,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> Unit, onAccessibilityClick: () -> Unit, onShowOverlayClick: () -> Unit) {
+fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> Unit, onAccessibilityClick: () -> Unit, onShowOverlayClick: () -> Unit, onCustomizeButtonClick: () -> Unit) {
     val context = LocalContext.current
     val overlayEnabled = CheckOverlayPermission(context)
     val accessibilityEnabled = CheckAccessibilityPermission(context)
@@ -105,6 +109,12 @@ fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> 
         ) {
             Text("Show Overlay")
         }
+        Button(
+            onClick = onCustomizeButtonClick,
+        ) {
+            Text("Customize Buttons")
+        }
+        
     }
 }
 
@@ -133,7 +143,8 @@ fun DefaultPreview() {
             "This is the main activity.",
             onOverlayClick = { },
             onAccessibilityClick = { },
-            onShowOverlayClick = { }
+            onShowOverlayClick = { },
+            onCustomizeButtonClick = { }
         )
     }
 }

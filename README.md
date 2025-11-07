@@ -53,6 +53,28 @@ Alyf Observer is an Android application that demonstrates the use of an Accessib
 
 The home screen widget displays a website from the app's local assets. The website is stored in the `app/src/main/assets` directory. The widget is updated by the `WidgetUpdateService` which loads the website into a `WebView` and then renders it to the widget's `RemoteViews`.
 
+## Overlay Structure
+
+The overlay UI is built entirely with **Jetpack Compose** in `FloatingWindowService.kt`. It does not use traditional XML layouts. The structure is as follows:
+
+*   **`OverlayList` (@Composable):** The main container for the overlay. It manages the different states of the overlay (idle, expanded, different layouts).
+    *   **Main View:** When the overlay is expanded, it shows a column of `FloatingActionButton`s for core actions:
+        *   **Dump UI:** Dumps the current UI tree to Logcat.
+        *   **Write Text:** Injects text into an input field.
+        *   **Close:** Hides the overlay.
+        *   **Show Paste Layout:** Switches to the `TextLayout`.
+        *   **Show Data Layout:** Switches to the `DataLayout`.
+        *   **Show WebView Layout:** Switches to the `WebViewLayout`.
+    *   **`TextLayout` (@Composable):** A view with pre-defined text snippets for quick pasting. Each button pastes a different message.
+    *   **`DataLayout` (@Composable):** A view for managing a list of data rows. Each row has controls to:
+        *   Change the **type**.
+        *   Change the **state**.
+        *   **Copy** the row data.
+        *   **Remove** the row.
+    *   **`WebViewLayout` (@Composable):** A view that displays a web page (`data_layout.html`) for more complex data interaction.
+
+The buttons are `FloatingActionButton`s, and their styling is controlled by `NewAndroidProjectTheme` and `MaterialTheme`, adapting to the system's Material You colors.
+
 ## Recent Changes
 
 *   **Dump UI Functionality:** Added a "Dump UI" button to the overlay that, when clicked, logs the entire UI hierarchy of the current screen to Logcat for debugging and analysis.
