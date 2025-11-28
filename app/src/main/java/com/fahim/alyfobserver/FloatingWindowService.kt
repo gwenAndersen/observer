@@ -105,6 +105,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
 import kotlin.math.roundToInt
 import com.google.accompanist.web.WebView
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
+
 
 enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT, HEART_LAYOUT }
 
@@ -125,8 +128,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private var overlayView: ComposeView? = null
     private lateinit var params: WindowManager.LayoutParams
     private var isExpanded = mutableStateOf(false)
-    private var offsetX by mutableStateOf(0f)
-    private var offsetY by mutableStateOf(0f)
     private var offsetX by mutableStateOf(0f)
     private var offsetY by mutableStateOf(0f)
     private var showTextLayout = mutableStateOf(false)
@@ -355,12 +356,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     clipboardButtonLayout = clipboardButtonLayout,
                                     heartButtonLayout = heartButtonLayout,
                                     onClose = { hideOverlay() },
-                                    onDrag = { dragAmount ->
-                                        params.x = (params.x + dragAmount.x).roundToInt()
-                                        params.y = (params.y + dragAmount.y).roundToInt()
-                                        lastYPosition = params.y // Update last known Y position
-                                        windowManager.updateViewLayout(this, params)
-                                    },
                                     onWriteClick = { showTextLayout.value = true; currentLayoutState.value = OverlayLayoutState.TEXT_LAYOUT },
                                     onDumpClick = { /* TODO: Implement dump UI */ },
                                     onToggleExpand = {
@@ -407,7 +402,26 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                         updateOverlayFlags()
                                     },
                                     isMinimized = isMinimized.value,
-                                    onIsMinimizedChange = { isMinimized.value = it }
+                                    onIsMinimizedChange = { isMinimized.value = it },
+                                    modifier = Modifier
+                                        .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                                        .pointerInput(Unit) {
+                                            detectDragGestures(
+                                                onDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    offsetX += dragAmount.x
+                                                    offsetY += dragAmount.y
+                                                },
+                                                onDragEnd = {
+                                                    params.x += offsetX.roundToInt()
+                                                    params.y += offsetY.roundToInt()
+                                                    offsetX = 0f
+                                                    offsetY = 0f
+                                                    lastYPosition = params.y
+                                                    windowManager.updateViewLayout(this@apply, params)
+                                                }
+                                            )
+                                        }
                                 )
                             }
                         }
@@ -458,7 +472,6 @@ fun OverlayList(
     clipboardButtonLayout: List<ButtonConfig>,
     heartButtonLayout: List<ButtonConfig>,
     onClose: () -> Unit,
-    onDrag: (androidx.compose.ui.geometry.Offset) -> Unit,
     onWriteClick: () -> Unit,
     onDumpClick: () -> Unit,
     onToggleExpand: () -> Unit,
@@ -477,10 +490,18 @@ fun OverlayList(
     onWebViewCreated: (WebView) -> Unit,
     onInputFocusChanged: (Boolean) -> Unit,
     isMinimized: Boolean,
-    onIsMinimizedChange: (Boolean) -> Unit
+    onIsMinimizedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val alpha by animateFloatAsState(if (isMinimized) 0.5f else 1f)
     val size by animateDpAsState(if (isMinimized) 40.dp else 56.dp)
+
+    val rootModifier = modifier
+        .padding(16.dp)
+        .alpha(alpha)
+        .clickable(enabled = isMinimized) { // Handle click when idle
+            onRestoreLayout(currentLayoutState.value)
+        }
 
     if (showTextLayout.value) {
         TextLayout(
@@ -534,21 +555,7 @@ fun OverlayList(
             onLaunchTermux = onLaunchTermux
         )
     } else {
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .alpha(alpha)
-                .pointerInput(Unit) {
-                    detectDragGestures {
-                        change, dragAmount ->
-                            change.consume()
-                            onDrag(dragAmount)
-                    }
-                }
-                .clickable(enabled = isMinimized) { // Handle click when idle
-                    onRestoreLayout(currentLayoutState.value)
-                }
-        ) {
+        Column(modifier = rootModifier) {
             if (isExpanded.value) {
                 Column { // Need to wrap the content in a Column or similar
                     FloatingActionButton(
