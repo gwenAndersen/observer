@@ -24,6 +24,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.fahim.alyfobserver.ui.theme.NewAndroidProjectTheme
+import androidx.compose.foundation.layout.Spacer // Added import
+import androidx.compose.foundation.layout.height // Added import
+import androidx.compose.ui.unit.dp // Added import
 
 
 class MainActivity : ComponentActivity() {
@@ -47,8 +50,8 @@ class MainActivity : ComponentActivity() {
                             intent.setPackage(packageName)
                             sendBroadcast(intent)
                         },
-                        onCustomizeButtonClick = {
-                            val intent = Intent(this@MainActivity, com.fahim.alyfobserver.ui.ButtonCustomizationActivity::class.java)
+                        onEditButtonsClick = {
+                            val intent = Intent(this, ButtonEditActivity::class.java)
                             startActivity(intent)
                         }
                     )
@@ -78,7 +81,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> Unit, onAccessibilityClick: () -> Unit, onShowOverlayClick: () -> Unit, onCustomizeButtonClick: () -> Unit) {
+fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> Unit, onAccessibilityClick: () -> Unit, onShowOverlayClick: () -> Unit, onEditButtonsClick: () -> Unit) {
     val context = LocalContext.current
     val overlayEnabled = CheckOverlayPermission(context)
     val accessibilityEnabled = CheckAccessibilityPermission(context)
@@ -109,11 +112,18 @@ fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> 
         ) {
             Text("Show Overlay")
         }
+        Spacer(modifier = Modifier.height(16.dp)) // Add a spacer
         Button(
-            onClick = onCustomizeButtonClick,
+            onClick = onEditButtonsClick,
         ) {
-            Text("Customize Buttons")
+            Text("Edit Buttons")
         }
+        Button(
+            onClick = onEditButtonsClick,
+        ) {
+            Text("Edit Buttons")
+        }
+        
         
     }
 }
@@ -144,7 +154,7 @@ fun DefaultPreview() {
             onOverlayClick = { },
             onAccessibilityClick = { },
             onShowOverlayClick = { },
-            onCustomizeButtonClick = { }
+            onEditButtonsClick = { }
         )
     }
 }

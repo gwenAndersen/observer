@@ -2,115 +2,109 @@ package com.fahim.alyfobserver
 
 import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Context.RECEIVER_NOT_EXPORTED
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
+import android.view.Gravity
+import android.view.ViewTreeObserver
 import android.view.WindowManager
-import androidx.compose.material3.Text
-import androidx.compose.ui.platform.ComposeView
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LooksOne
 import androidx.compose.material.icons.filled.LooksTwo
 import androidx.compose.material.icons.filled.Looks3
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Web
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.platform.ClipboardManager
-
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.runtime.*
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.Dp
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.focus.onFocusChanged
-
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
-import android.os.Handler
-import android.os.Looper
-import android.graphics.Rect // Added for keyboard detection
-import android.view.ViewTreeObserver // Added for keyboard detection
-import android.webkit.JavascriptInterface
-import com.fahim.alyfobserver.ui.theme.NewAndroidProjectTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.draw.alpha
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.runtime.snapshots.SnapshotStateList
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.IconButton
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import com.google.accompanist.web.WebView
-import android.webkit.WebView
-import com.google.accompanist.web.rememberWebViewState
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.builtins.ListSerializer
-import androidx.activity.OnBackPressedDispatcher
-import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.fahim.alyfobserver.ui.theme.NewAndroidProjectTheme
+import com.google.accompanist.web.rememberWebViewState
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.builtins.ListSerializer
 import kotlin.math.roundToInt
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.lifecycle.LifecycleRegistry
-import android.os.Bundle
-
-
+import com.google.accompanist.web.WebView
 
 enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT, HEART_LAYOUT }
 
@@ -130,14 +124,18 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private lateinit var windowManager: WindowManager
     private var overlayView: ComposeView? = null
     private lateinit var params: WindowManager.LayoutParams
-    private var isIdle = mutableStateOf(false)
     private var isExpanded = mutableStateOf(false)
+    private var offsetX by mutableStateOf(0f)
+    private var offsetY by mutableStateOf(0f)
+    private var offsetX by mutableStateOf(0f)
+    private var offsetY by mutableStateOf(0f)
     private var showTextLayout = mutableStateOf(false)
     private var showDataLayout = mutableStateOf(false)
     private var showWebViewLayout = mutableStateOf(false)
     private var showHeartLayout = mutableStateOf(false)
     private var currentLayoutState = mutableStateOf(OverlayLayoutState.MAIN)
     private var isOverlayInputFocused = mutableStateOf(false)
+    private var isMinimized = mutableStateOf(false)
     private val dataRows = mutableStateListOf<DataRow>()
     private var screenHeight = 0 // Added for keyboard detection
     private var lastYPosition = 100 // Added to store last manual Y position
@@ -147,7 +145,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
             isExpanded.value = false
             idleHandler.postDelayed(idleRunnable, 500) // Give it time to collapse
         } else {
-            isIdle.value = true
+            isMinimized.value = true
         }
     }
 
@@ -237,7 +235,8 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         Log.d("FloatingWindowService", "onCreate: Registering broadcast receiver.")
         registerReceiver(broadcastReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
 
-        
+        val layoutUpdateFilter = IntentFilter("com.fahim.alyfobserver.LAYOUT_UPDATED")
+        registerReceiver(layoutUpdateReceiver, layoutUpdateFilter, RECEIVER_NOT_EXPORTED)
     }
 
 
@@ -245,6 +244,17 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         super.onStartCommand(intent, flags, startId)
         Log.d("FloatingWindowService", "onStartCommand: Service is started.\n")
         return START_NOT_STICKY
+    }
+
+    private fun launchApp(packageName: String) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(launchIntent)
+        } else {
+            Log.e("FloatingWindowService", "Could not find app for package: $packageName")
+            // Optionally, show a toast to the user
+        }
     }
 
     private fun handleLinkClick(link: String) {
@@ -256,19 +266,12 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
             startActivity(browserIntent)
         } else if (link.contains(".")) {
             // Assume it's an app package name
-            val launchIntent = packageManager.getLaunchIntentForPackage(link)
-            if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(launchIntent)
-            } else {
-                Log.e("FloatingWindowService", "Could not find app for package: $link")
-                // Optionally, show a toast to the user
-            }
+            launchApp(link)
         }
     }
 
     private fun resetIdleTimer() {
-        isIdle.value = false
+        isMinimized.value = false
         idleHandler.removeCallbacks(idleRunnable)
         idleHandler.postDelayed(idleRunnable, 20000) // 20 seconds
     }
@@ -281,7 +284,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     }
 
     private fun updateWebViewData() {
-        val jsonData = kotlinx.serialization.json.Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(DataRow.serializer()), dataRows.toList())
+        val jsonData = Json.encodeToString(ListSerializer(DataRow.serializer()), dataRows.toList())
         overlayView?.post { // Ensure this runs on the UI thread
             webViewInstance?.evaluateJavascript("window.updateDataFromAndroid('$jsonData')") { result ->
                 Log.d("FloatingWindowService", "WebView update result: $result")
@@ -293,6 +296,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         super.onDestroy()
         Log.d("FloatingWindowService", "onDestroy: Service is being destroyed.")
         unregisterReceiver(broadcastReceiver)
+        unregisterReceiver(layoutUpdateReceiver)
         hideOverlay()
         _viewModelStore.clear()
     }
@@ -302,8 +306,14 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
             // If an input field is focused, make the overlay focusable and allow IME interaction
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY or
             WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-        } else {
-            // Otherwise, make it non-focusable and non-touch-modal
+        } else if (isMinimized.value) {
+            // If TextLayout is minimized or the main overlay is idle, make it non-focusable and non-touch-modal
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        }
+        else {
+            // If not focused on input, not minimized, and not idle, it should still allow touches to pass through by default
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -336,12 +346,11 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                             MaterialTheme {
                                 OverlayList(
                                     context = this@FloatingWindowService,
-                                    isIdle = isIdle.value,
                                     isExpanded = isExpanded,
-                                    showTextLayout = showTextLayout.value,
-                                    showDataLayout = showDataLayout.value,
-                                    showWebViewLayout = showWebViewLayout.value,
-                                    showHeartLayout = showHeartLayout.value,
+                                    showTextLayout = showTextLayout,
+                                    showDataLayout = showDataLayout,
+                                    showWebViewLayout = showWebViewLayout,
+                                    showHeartLayout = showHeartLayout,
                                     dataRows = dataRows,
                                     clipboardButtonLayout = clipboardButtonLayout,
                                     heartButtonLayout = heartButtonLayout,
@@ -366,9 +375,10 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     onPasteText = { text -> pasteText(text) },
                                     saveData = { saveDataRows() },
                                     onLinkClick = { link -> handleLinkClick(link) },
-                                    currentLayoutState = currentLayoutState.value,
+                                    onLaunchTermux = { launchApp("com.termux") },
+                                    currentLayoutState = currentLayoutState,
                                     onRestoreLayout = { state ->
-                                        isIdle.value = false
+                                        isMinimized.value = false
                                         isExpanded.value = true
                                         when (state) {
                                             OverlayLayoutState.MAIN -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false }
@@ -395,7 +405,9 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     onInputFocusChanged = { isFocused ->
                                         isOverlayInputFocused.value = isFocused
                                         updateOverlayFlags()
-                                    }
+                                    },
+                                    isMinimized = isMinimized.value,
+                                    onIsMinimizedChange = { isMinimized.value = it }
                                 )
                             }
                         }
@@ -404,7 +416,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
             }
             windowManager.addView(overlayView, params)
             overlayView?.viewTreeObserver?.addOnGlobalLayoutListener(globalLayoutListener)
-            screenHeight = windowManager.defaultDisplay.height // Initialize screenHeight
+            screenHeight = resources.displayMetrics.heightPixels
             resetIdleTimer()
         }
     }
@@ -437,17 +449,16 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
 @Composable
 fun OverlayList(
     context: Context,
-    isIdle: Boolean,
     isExpanded: MutableState<Boolean>,
-    showTextLayout: Boolean,
-    showDataLayout: Boolean,
-    showWebViewLayout: Boolean,
-    showHeartLayout: Boolean,
+    showTextLayout: MutableState<Boolean>,
+    showDataLayout: MutableState<Boolean>,
+    showWebViewLayout: MutableState<Boolean>,
+    showHeartLayout: MutableState<Boolean>,
     dataRows: SnapshotStateList<DataRow>,
     clipboardButtonLayout: List<ButtonConfig>,
     heartButtonLayout: List<ButtonConfig>,
     onClose: () -> Unit,
-    onDrag: (Offset) -> Unit,
+    onDrag: (androidx.compose.ui.geometry.Offset) -> Unit,
     onWriteClick: () -> Unit,
     onDumpClick: () -> Unit,
     onToggleExpand: () -> Unit,
@@ -458,44 +469,70 @@ fun OverlayList(
     onPasteText: (String) -> Unit,
     saveData: () -> Unit,
     onLinkClick: (String) -> Unit,
-    currentLayoutState: OverlayLayoutState,
+    onLaunchTermux: () -> Unit,
+    currentLayoutState: MutableState<OverlayLayoutState>,
     onRestoreLayout: (OverlayLayoutState) -> Unit,
     onSaveDataFromWebView: (String) -> Unit,
     onLoadDataForWebView: () -> String,
-    onWebViewCreated: (android.webkit.WebView) -> Unit,
-    onInputFocusChanged: (Boolean) -> Unit // New parameter
+    onWebViewCreated: (WebView) -> Unit,
+    onInputFocusChanged: (Boolean) -> Unit,
+    isMinimized: Boolean,
+    onIsMinimizedChange: (Boolean) -> Unit
 ) {
-    val alpha by animateFloatAsState(if (isIdle) 0.5f else 1f)
-    val size by animateDpAsState(if (isIdle) 40.dp else 56.dp)
+    val alpha by animateFloatAsState(if (isMinimized) 0.5f else 1f)
+    val size by animateDpAsState(if (isMinimized) 40.dp else 56.dp)
 
-    if (showTextLayout) {
+    if (showTextLayout.value) {
         TextLayout(
             onPasteText = onPasteText,
             onToggleTextLayout = onToggleTextLayout,
             onInputFocusChanged = onInputFocusChanged,
-            isIdle = isIdle,
             alpha = alpha,
             size = size,
             onRestoreLayout = onRestoreLayout,
-            currentLayoutState = currentLayoutState,
-            buttonLayout = clipboardButtonLayout
+            currentLayoutState = currentLayoutState.value,
+            buttonLayout = clipboardButtonLayout,
+            onSwapLayout = {
+                showTextLayout.value = false
+                showHeartLayout.value = true
+                currentLayoutState.value = OverlayLayoutState.HEART_LAYOUT
+            },
+            isMinimized = isMinimized,
+            onIsMinimizedChange = onIsMinimizedChange
         )
-    } else if (showDataLayout) {
+    } else if (showDataLayout.value) {
         DataLayout(dataRows = dataRows, onToggleDataLayout = onToggleDataLayout, saveData = saveData, onLinkClick = onLinkClick, onInputFocusChanged = onInputFocusChanged)
-    } else if (showHeartLayout) {
+    } else if (showHeartLayout.value) {
         TextLayout(
             onPasteText = onPasteText,
             onToggleTextLayout = onToggleHeartLayout, // Use the new toggle function
             onInputFocusChanged = onInputFocusChanged,
-            isIdle = isIdle,
             alpha = alpha,
             size = size,
             onRestoreLayout = onRestoreLayout,
-            currentLayoutState = currentLayoutState,
-            buttonLayout = heartButtonLayout // Use the new button layout
+            currentLayoutState = currentLayoutState.value,
+            buttonLayout = heartButtonLayout, // Use the new button layout
+            onSwapLayout = {
+                showHeartLayout.value = false
+                showTextLayout.value = true
+                currentLayoutState.value = OverlayLayoutState.TEXT_LAYOUT
+            },
+            isMinimized = isMinimized,
+            onIsMinimizedChange = onIsMinimizedChange
         )
-    } else if (showWebViewLayout) {
-                                        WebViewLayout(context = context, onToggleWebViewLayout = onToggleWebViewLayout, onSaveDataFromWebView = onSaveDataFromWebView, onLoadDataForWebView = onLoadDataForWebView, onWebViewCreated = onWebViewCreated)
+    } else if (showWebViewLayout.value) {
+        WebViewLayout(
+            context = context,
+            onToggleWebViewLayout = onToggleWebViewLayout,
+            onSaveDataFromWebView = onSaveDataFromWebView,
+            onLoadDataForWebView = onLoadDataForWebView,
+            onWebViewCreated = onWebViewCreated,
+            isMinimized = isMinimized,
+            onIsMinimizedChange = onIsMinimizedChange,
+            alpha = alpha,
+            size = size,
+            onLaunchTermux = onLaunchTermux
+        )
     } else {
         Column(
             modifier = Modifier
@@ -508,8 +545,8 @@ fun OverlayList(
                             onDrag(dragAmount)
                     }
                 }
-                .clickable(enabled = isIdle) { // Handle click when idle
-                    onRestoreLayout(currentLayoutState)
+                .clickable(enabled = isMinimized) { // Handle click when idle
+                    onRestoreLayout(currentLayoutState.value)
                 }
         ) {
             if (isExpanded.value) {
@@ -579,7 +616,7 @@ fun OverlayList(
                 onClick = onToggleExpand,
                 modifier = Modifier.size(size)
             ) {
-                if (isIdle && currentLayoutState == OverlayLayoutState.TEXT_LAYOUT) {
+                if (isMinimized && currentLayoutState.value == OverlayLayoutState.TEXT_LAYOUT) {
                     Icon(Icons.Default.ContentPaste, contentDescription = "Restore Clipboard")
                 } else {
                     Icon(if (isExpanded.value) Icons.Default.Close else Icons.Default.Add, contentDescription = "Toggle")
@@ -590,24 +627,71 @@ fun OverlayList(
 }
 
 @Composable
-fun WebViewLayout(context: Context, onToggleWebViewLayout: () -> Unit, onSaveDataFromWebView: (String) -> Unit, onLoadDataForWebView: () -> String, onWebViewCreated: (android.webkit.WebView) -> Unit) {
-    Column(
-        modifier = Modifier.padding(16.dp)
-    ) {
-        val webViewState = rememberWebViewState(url = "file:///android_asset/data_layout.html")
-        WebView(
-            state = webViewState,
-            modifier = Modifier.fillMaxWidth(0.95f).height(400.dp),
-            onCreated = { webView ->
-                onWebViewCreated(webView) // Call the callback to pass the WebView instance
-                webView.settings.javaScriptEnabled = true // Enable JavaScript
-                webView.settings.loadWithOverviewMode = true
-                webView.settings.useWideViewPort = true
-                webView.addJavascriptInterface(WebAppInterface(context, onSaveDataFromWebView, onLoadDataForWebView), "Android")
+fun WebViewLayout(
+    context: Context,
+    onToggleWebViewLayout: () -> Unit,
+    onSaveDataFromWebView: (String) -> Unit,
+    onLoadDataForWebView: () -> String,
+    onWebViewCreated: (WebView) -> Unit,
+    isMinimized: Boolean,
+    onIsMinimizedChange: (Boolean) -> Unit,
+    alpha: Float,
+    size: Dp,
+    onLaunchTermux: () -> Unit
+) {
+    val configuration = LocalConfiguration.current
+    val screenWidth = configuration.screenWidthDp.dp
+    val screenHeight = configuration.screenHeightDp.dp
+    val minimizedSize = (minOf(screenWidth, screenHeight) * 0.03f)
+
+    if (isMinimized) {
+        FloatingActionButton(
+            onClick = { onIsMinimizedChange(false) }, // Restore on click
+            modifier = Modifier
+                .size(width = minimizedSize, height = minimizedSize * 2)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .alpha(alpha)
+        ) {
+            Row {
+                FloatingActionButton(
+                    onClick = { onIsMinimizedChange(true) }, // Minimize on click
+                    modifier = Modifier
+                        .size(size / 2)
+                ) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize Layout")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                FloatingActionButton(
+                    onClick = onLaunchTermux,
+                    modifier = Modifier
+                        .size(size / 2)
+                ) {
+                    Icon(Icons.Default.Star, contentDescription = "Launch Termux")
+                }
             }
-        )
-        FloatingActionButton(onClick = onToggleWebViewLayout) {
-            Icon(Icons.Default.Close, contentDescription = "Close WebView Layout")
+            Spacer(modifier = Modifier.height(8.dp)) // Add a small spacer
+
+            val webViewState = rememberWebViewState(url = "http://localhost:5000/")
+            WebView(
+                state = webViewState,
+                modifier = Modifier.fillMaxWidth(0.95f).height(400.dp),
+                onCreated = { webView ->
+                    onWebViewCreated(webView) // Call the callback to pass the WebView instance
+                    webView.settings.javaScriptEnabled = true // Enable JavaScript
+                    webView.settings.loadWithOverviewMode = true
+                    webView.settings.useWideViewPort = true
+                    webView.addJavascriptInterface(WebAppInterface(context, onSaveDataFromWebView, onLoadDataForWebView), "Android")
+                }
+            )
+            FloatingActionButton(onClick = onToggleWebViewLayout) {
+                Icon(Icons.Default.Close, contentDescription = "Close WebView Layout")
+            }
         }
     }
 }
@@ -617,22 +701,27 @@ fun TextLayout(
     onPasteText: (String) -> Unit,
     onToggleTextLayout: () -> Unit,
     onInputFocusChanged: (Boolean) -> Unit,
-    isIdle: Boolean,
     alpha: Float,
     size: Dp,
     onRestoreLayout: (OverlayLayoutState) -> Unit,
     currentLayoutState: OverlayLayoutState,
-    buttonLayout: List<ButtonConfig>
+    buttonLayout: List<ButtonConfig>,
+    onSwapLayout: () -> Unit,
+    isMinimized: Boolean,
+    onIsMinimizedChange: (Boolean) -> Unit
 ) {
-    if (isIdle) {
+    val configuration = LocalConfiguration.current
+    val screenWidth = configuration.screenWidthDp.dp
+    val screenHeight = configuration.screenHeightDp.dp
+    val minimizedSize = (minOf(screenWidth, screenHeight) * 0.03f)
+
+    if (isMinimized) {
         FloatingActionButton(
-            onClick = { onRestoreLayout(currentLayoutState) },
+            onClick = { onIsMinimizedChange(false) }, // Restore on click
             modifier = Modifier
-                .padding(16.dp)
-                .alpha(alpha)
-                .size(size)
+                .size(width = minimizedSize, height = minimizedSize * 2)
         ) {
-            Icon(Icons.Default.ContentPaste, contentDescription = "Restore Clipboard")
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
         }
     } else {
         Column(
@@ -640,6 +729,16 @@ fun TextLayout(
                 .padding(16.dp)
                 .alpha(alpha)
         ) {
+            FloatingActionButton(
+                onClick = { onIsMinimizedChange(true) }, // Minimize on click
+                modifier = Modifier
+                    .size(size / 2)
+                    .align(Alignment.End)
+            ) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize Layout")
+            }
+            Spacer(modifier = Modifier.height(8.dp)) // Add a small spacer
+
             val buttons = buttonLayout.toMutableList()
             while (buttons.isNotEmpty()) {
                 val button = buttons.removeFirst()
@@ -669,6 +768,13 @@ fun TextLayout(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
+
+            FloatingActionButton(
+                onClick = onSwapLayout,
+            ) {
+                Icon(Icons.Default.SwapHoriz, contentDescription = "Swap Layout")
+            }
+            Spacer(modifier = Modifier.height(16.dp)) // Add a spacer
 
             FloatingActionButton(
                 onClick = onToggleTextLayout,
