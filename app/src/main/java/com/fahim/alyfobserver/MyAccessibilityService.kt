@@ -9,23 +9,33 @@ import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class MyAccessibilityService : AccessibilityService() {
 
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
+
     private val broadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ACTION_PASTE_TEXT -> {
-                    val textToPaste = intent.getStringExtra("textToPaste")
-                    if (textToPaste != null) {
-                        performPaste(textToPaste)
+            serviceScope.launch(Dispatchers.IO) {
+                when (intent?.action) {
+                    ACTION_PASTE_TEXT -> {
+                        val textToPaste = intent.getStringExtra("textToPaste")
+                        if (textToPaste != null) {
+                            performPaste(textToPaste)
+                        }
                     }
+                    ACTION_DUMP_UI_TREE -> {
+                        dumpUiTree()
+                    }
+                    // Add other actions here later
                 }
-                ACTION_DUMP_UI_TREE -> {
-                    dumpUiTree()
-                }
-                // Add other actions here later
             }
         }
     }
@@ -42,9 +52,10 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        unregisterReceiver(broadcastReceiver)
-        Log.d("MyAccessibilityService", "Accessibility service disconnected and broadcast receiver unregistered.")
         super.onDestroy()
+        unregisterReceiver(broadcastReceiver)
+        serviceJob.cancel()
+        Log.d("MyAccessibilityService", "Accessibility service disconnected and broadcast receiver unregistered.")
     }
 
     private fun performPaste(text: String) {
