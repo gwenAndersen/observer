@@ -61,4 +61,8 @@
 
     </application>
 
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
 </manifest>

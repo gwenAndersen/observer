@@ -16,6 +16,11 @@ import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import android.widget.Toast
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -34,8 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
@@ -68,7 +72,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
+
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -102,7 +106,7 @@ import com.google.accompanist.web.rememberWebViewState
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.builtins.ListSerializer
+
 import kotlin.math.roundToInt
 import com.google.accompanist.web.WebView
 import androidx.compose.foundation.layout.offset
@@ -137,7 +141,8 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private var currentLayoutState = mutableStateOf(OverlayLayoutState.MAIN)
     private var isOverlayInputFocused = mutableStateOf(false)
     private var isMinimized = mutableStateOf(false)
-    private val dataRows = mutableStateListOf<DataRow>()
+    private var isFullScreen by mutableStateOf(false) // Added back
+    
     private var screenHeight = 0 // Added for keyboard detection
     private var lastYPosition = 100 // Added to store last manual Y position
     private val idleHandler = Handler(Looper.getMainLooper())
@@ -178,8 +183,18 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private val globalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
         val rect = Rect()
         overlayView?.getWindowVisibleDisplayFrame(rect)
-        val keyboardHeight = if (rect.bottom > screenHeight) 0 else screenHeight - rect.bottom
 
+        val fullscreenNow = rect.top == 0
+        if (fullscreenNow != isFullScreen) {
+            isFullScreen = fullscreenNow
+            if (isFullScreen) {
+                hideOverlay()
+            } else {
+                showOverlay()
+            }
+        }
+
+        val keyboardHeight = if (rect.bottom > screenHeight) 0 else screenHeight - rect.bottom
         if (keyboardHeight > screenHeight * 0.15) { // If keyboard is likely open (more than 15% of screen height)
             params.y = rect.bottom - (overlayView?.height ?: 0) - 50 // Adjust Y to be above keyboard
         } else {
@@ -214,10 +229,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         onBackPressedDispatcher = OnBackPressedDispatcher { /* Handle back press if needed */ }
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        lifecycleScope.launch {
-            dataRows.addAll(DataStoreManager.load(this@FloatingWindowService))
-        } // Re-enable loading saved data
-        updateWebViewData() // Update WebView with loaded data
+        
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -258,39 +270,10 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         }
     }
 
-    private fun handleLinkClick(link: String) {
-        Log.d("FloatingWindowService", "Handling link click: $link")
-        if (link.startsWith("http://") || link.startsWith("https://")) {
-            // Open URL in browser
-            val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link))
-            browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(browserIntent)
-        } else if (link.contains(".")) {
-            // Assume it's an app package name
-            launchApp(link)
-        }
-    }
-
     private fun resetIdleTimer() {
         isMinimized.value = false
         idleHandler.removeCallbacks(idleRunnable)
         idleHandler.postDelayed(idleRunnable, 20000) // 20 seconds
-    }
-
-    private fun saveDataRows() {
-        lifecycleScope.launch {
-            DataStoreManager.save(this@FloatingWindowService, dataRows)
-        }
-        updateWebViewData() // Call to update WebView after saving
-    }
-
-    private fun updateWebViewData() {
-        val jsonData = Json.encodeToString(ListSerializer(DataRow.serializer()), dataRows.toList())
-        overlayView?.post { // Ensure this runs on the UI thread
-            webViewInstance?.evaluateJavascript("window.updateDataFromAndroid('$jsonData')") { result ->
-                Log.d("FloatingWindowService", "WebView update result: $result")
-            }
-        }
     }
 
     override fun onDestroy() {
@@ -303,21 +286,10 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     }
 
     private fun updateOverlayFlags() {
-        params.flags = if (isOverlayInputFocused.value) {
-            // If an input field is focused, make the overlay focusable and allow IME interaction
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY or
-            WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-        } else if (isMinimized.value) {
-            // If TextLayout is minimized or the main overlay is idle, make it non-focusable and non-touch-modal
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        }
-        else {
-            // If not focused on input, not minimized, and not idle, it should still allow touches to pass through by default
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        if (isOverlayInputFocused.value) {
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         }
         windowManager.updateViewLayout(overlayView, params)
     }
@@ -325,6 +297,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private fun showOverlay() {
         Log.d("FloatingWindowService", "showOverlay: Attempting to show overlay.")
         if (overlayView == null) {
+            Log.d("FloatingWindowService", "showOverlay: Recreating overlayView.")
             overlayView = ComposeView(this).apply {
                 // Set up LifecycleOwner, ViewModelStoreOwner, and SavedStateRegistryOwner
                 lifecycleOwner = ServiceLifecycleOwner()
@@ -333,7 +306,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_START)
                 lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
                 setViewTreeLifecycleOwner(lifecycleOwner)
-                setViewTreeViewModelStoreOwner(this@FloatingWindowService)
+                                setViewTreeViewModelStoreOwner(this@FloatingWindowService)
                 setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
 
                 setContent {
@@ -352,12 +325,9 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     showDataLayout = showDataLayout,
                                     showWebViewLayout = showWebViewLayout,
                                     showHeartLayout = showHeartLayout,
-                                    dataRows = dataRows,
                                     clipboardButtonLayout = clipboardButtonLayout,
                                     heartButtonLayout = heartButtonLayout,
                                     onClose = { hideOverlay() },
-                                    onWriteClick = { showTextLayout.value = true; currentLayoutState.value = OverlayLayoutState.TEXT_LAYOUT },
-                                    onDumpClick = { /* TODO: Implement dump UI */ },
                                     onToggleExpand = {
                                         isExpanded.value = !isExpanded.value
                                         Log.d("FloatingWindowService", "isExpanded toggled to: ${isExpanded.value}")
@@ -368,8 +338,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     onToggleWebViewLayout = { showWebViewLayout.value = !showWebViewLayout.value; currentLayoutState.value = if (showWebViewLayout.value) OverlayLayoutState.WEB_VIEW_LAYOUT else OverlayLayoutState.MAIN },
                                     onToggleHeartLayout = { showHeartLayout.value = !showHeartLayout.value; currentLayoutState.value = if (showHeartLayout.value) OverlayLayoutState.HEART_LAYOUT else OverlayLayoutState.MAIN },
                                     onPasteText = { text -> pasteText(text) },
-                                    saveData = { saveDataRows() },
-                                    onLinkClick = { link -> handleLinkClick(link) },
                                     onLaunchTermux = { launchApp("com.termux") },
                                     currentLayoutState = currentLayoutState,
                                     onRestoreLayout = { state ->
@@ -385,17 +353,12 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                         currentLayoutState.value = state
                                         resetIdleTimer()
                                     },
-                                    onSaveDataFromWebView = { jsonData ->
-                                        lifecycleScope.launch {
-                                            val newDataRows = Json.decodeFromString(ListSerializer(DataRow.serializer()), jsonData)
-                                            dataRows.clear()
-                                            dataRows.addAll(newDataRows)
-                                            saveDataRows()
-                                        }
+                                    onSaveDataFromWebView = { 
+                                        // No-op
                                     },
-                                    onLoadDataForWebView = { ->
-                                        Json.encodeToString(ListSerializer(DataRow.serializer()), dataRows.toList())
-                                    },
+                                    onLoadDataForWebView = { 
+                                        ""
+                                     },
                                     onWebViewCreated = { webView -> webViewInstance = webView },
                                     onInputFocusChanged = { isFocused ->
                                         isOverlayInputFocused.value = isFocused
@@ -468,20 +431,15 @@ fun OverlayList(
     showDataLayout: MutableState<Boolean>,
     showWebViewLayout: MutableState<Boolean>,
     showHeartLayout: MutableState<Boolean>,
-    dataRows: SnapshotStateList<DataRow>,
     clipboardButtonLayout: List<ButtonConfig>,
     heartButtonLayout: List<ButtonConfig>,
     onClose: () -> Unit,
-    onWriteClick: () -> Unit,
-    onDumpClick: () -> Unit,
     onToggleExpand: () -> Unit,
     onToggleTextLayout: () -> Unit,
     onToggleDataLayout: () -> Unit,
     onToggleWebViewLayout: () -> Unit,
     onToggleHeartLayout: () -> Unit,
     onPasteText: (String) -> Unit,
-    saveData: () -> Unit,
-    onLinkClick: (String) -> Unit,
     onLaunchTermux: () -> Unit,
     currentLayoutState: MutableState<OverlayLayoutState>,
     onRestoreLayout: (OverlayLayoutState) -> Unit,
@@ -522,7 +480,7 @@ fun OverlayList(
             onIsMinimizedChange = onIsMinimizedChange
         )
     } else if (showDataLayout.value) {
-        DataLayout(dataRows = dataRows, onToggleDataLayout = onToggleDataLayout, saveData = saveData, onLinkClick = onLinkClick, onInputFocusChanged = onInputFocusChanged)
+        GeneratorLayout(context = context, onToggleDataLayout = onToggleDataLayout, onInputFocusChanged = onInputFocusChanged)
     } else if (showHeartLayout.value) {
         TextLayout(
             onPasteText = onPasteText,
@@ -558,26 +516,7 @@ fun OverlayList(
         Column(modifier = rootModifier) {
             if (isExpanded.value) {
                 Column { // Need to wrap the content in a Column or similar
-                    FloatingActionButton(
-                        onClick = {
-                            onDumpClick()
-                            onToggleExpand()
-                        },
-                        modifier = Modifier.size(size)
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = "Dump UI")
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    FloatingActionButton(
-                        onClick = {
-                            onWriteClick()
-                            onToggleExpand()
-                        },
-                        modifier = Modifier.size(size)
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = "Write Text")
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
+                    
                     FloatingActionButton(
                         onClick = {
                             onClose()
@@ -653,9 +592,8 @@ fun WebViewLayout(
 
     if (isMinimized) {
         FloatingActionButton(
-            onClick = { onIsMinimizedChange(false) }, // Restore on click
-            modifier = Modifier
-                .size(width = minimizedSize, height = minimizedSize * 2)
+            onClick = { onIsMinimizedChange(false) },
+            modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2)
         ) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
         }
@@ -667,30 +605,28 @@ fun WebViewLayout(
         ) {
             Row {
                 FloatingActionButton(
-                    onClick = { onIsMinimizedChange(true) }, // Minimize on click
-                    modifier = Modifier
-                        .size(size / 2)
+                    onClick = { onIsMinimizedChange(true) },
+                    modifier = Modifier.size(size / 2)
                 ) {
                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize Layout")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 FloatingActionButton(
                     onClick = onLaunchTermux,
-                    modifier = Modifier
-                        .size(size / 2)
+                    modifier = Modifier.size(size / 2)
                 ) {
                     Icon(Icons.Default.Star, contentDescription = "Launch Termux")
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp)) // Add a small spacer
+            Spacer(modifier = Modifier.height(8.dp))
 
             val webViewState = rememberWebViewState(url = "http://localhost:5000/")
             WebView(
                 state = webViewState,
                 modifier = Modifier.fillMaxWidth(0.95f).height(400.dp),
                 onCreated = { webView ->
-                    onWebViewCreated(webView) // Call the callback to pass the WebView instance
-                    webView.settings.javaScriptEnabled = true // Enable JavaScript
+                    onWebViewCreated(webView)
+                    webView.settings.javaScriptEnabled = true
                     webView.settings.loadWithOverviewMode = true
                     webView.settings.useWideViewPort = true
                     webView.addJavascriptInterface(WebAppInterface(context, onSaveDataFromWebView, onLoadDataForWebView), "Android")
@@ -792,149 +728,103 @@ fun TextLayout(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DataLayout(dataRows: SnapshotStateList<DataRow>, onToggleDataLayout: () -> Unit, saveData: () -> Unit, onLinkClick: (String) -> Unit, onInputFocusChanged: (Boolean) -> Unit) {
+fun GeneratorLayout(context: Context, onToggleDataLayout: () -> Unit, onInputFocusChanged: (Boolean) -> Unit) {
+    var transactionText by remember { mutableStateOf("") }
+    var linkText by remember { mutableStateOf("") }
+    val clipboardManager: ClipboardManager = LocalClipboardManager.current
 
-    // Ensure there's always at least one empty row
-    if (dataRows.isEmpty()) {
-        dataRows.add(DataRow(1, "", "Green"))
-    }
-
-    Box(
+    Column(
         modifier = Modifier
             .padding(16.dp)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            // Header Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
-                Text("Type", fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.2f), color = MaterialTheme.colorScheme.onSurface)
-                Text("Link", fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.5f), color = MaterialTheme.colorScheme.onSurface)
-                Text("State", fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.2f), color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.weight(0.1f)) // For the remove button
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LazyColumn {
-                itemsIndexed(dataRows) { index, row ->
-                    DataRowItem(
-                        dataRow = row,
-                        onTypeChange = { newType ->
-                            val updatedRow = row.copy(type = newType)
-                            dataRows[index] = updatedRow
-                            saveData()
-                        },
-                        onLinkChange = { newLink ->
-                            val updatedRow = row.copy(link = newLink)
-                            dataRows[index] = updatedRow
-                            // Add a new empty row if the current one is being filled and it's the last one
-                            if (index == dataRows.lastIndex && newLink.isNotBlank()) {
-                                dataRows.add(DataRow(1, "", "Green"))
-                            }
-                            saveData()
-                        },
-                        onStateChange = { newState ->
-                            val updatedRow = row.copy(state = newState)
-                            dataRows[index] = updatedRow
-                            saveData()
-                        },
-                        onRemove = {
-                            if (dataRows.size > 1) { // Don't remove the last row if it's the only one
-                                dataRows.removeAt(index)
-                                saveData()
-                            }
-                        },
-                        onLinkClick = { link -> onLinkClick(link) },
-                        onInputFocusChanged = onInputFocusChanged
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            FloatingActionButton(onClick = onToggleDataLayout) {
-                Icon(Icons.Default.Close, contentDescription = "Close Data Layout")
-            }
-        }
-    }
-}
-
-@Composable
-fun DataRowItem(
-    dataRow: DataRow,
-    onTypeChange: (Int) -> Unit,
-    onLinkChange: (String) -> Unit,
-    onStateChange: (String) -> Unit,
-    onRemove: () -> Unit,
-    onLinkClick: (String) -> Unit,
-    onInputFocusChanged: (Boolean) -> Unit // New parameter
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = when (dataRow.type) {
-                1 -> Icons.Default.LooksOne
-                2 -> Icons.Default.LooksTwo
-                3 -> Icons.Default.Looks3
-                else -> Icons.Default.LooksOne // Default case
-            },
-            contentDescription = "Type ${dataRow.type}",
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.clickable {
-                onTypeChange(if (dataRow.type == 3) 1 else dataRow.type + 1)
-            }.weight(0.2f)
-        )
-
+        Text("Text Generator", style = MaterialTheme.typography.titleMedium)
+        
         OutlinedTextField(
-            value = dataRow.link,
-            onValueChange = onLinkChange,
-            modifier = Modifier
-                .weight(0.5f)
-                .onFocusChanged { focusState ->
-                    onInputFocusChanged(focusState.isFocused)
+            value = transactionText,
+            onValueChange = { transactionText = it },
+            label = { Text("Transaction Text") },
+            modifier = Modifier.fillMaxWidth().onFocusChanged { onInputFocusChanged(it.isFocused) }
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = linkText,
+                onValueChange = { linkText = it },
+                label = { Text("Link(s)") },
+                modifier = Modifier.weight(1f).onFocusChanged { onInputFocusChanged(it.isFocused) },
+                singleLine = false,
+                minLines = 2
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(onClick = { 
+                if (linkText.isNotBlank()) {
+                    val urlRegex = """(https?://\S+)""".toRegex()
+                    urlRegex.find(linkText)?.value?.let { linkToOpen ->
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(linkToOpen)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
-                .clickable {
-                    onLinkClick(dataRow.link)
-                },
-            singleLine = true,
-            readOnly = false // Make it editable
-        )
-
-        Icon(
-            imageVector = if (dataRow.state == "Green") Icons.Default.Done else Icons.Default.Close,
-            contentDescription = "State ${dataRow.state}",
-            tint = if (dataRow.state == "Green") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            modifier = Modifier.clickable {
-                onStateChange(if (dataRow.state == "Green") "Red" else "Green")
-            }.weight(0.2f)
-        )
-
-        val clipboardManager: ClipboardManager = LocalClipboardManager.current
-        IconButton(onClick = {
-            val textToCopy = "${dataRow.type} ${dataRow.link} ${dataRow.state}"
-            clipboardManager.setText(AnnotatedString(textToCopy))
-        }) {
-            Icon(Icons.Default.ContentPaste, contentDescription = "Copy Row", tint = MaterialTheme.colorScheme.onSurface)
+            }) {
+                Icon(Icons.Default.OpenInBrowser, contentDescription = "Open First Link")
+            }
         }
-        IconButton(onClick = onRemove, modifier = Modifier.weight(0.1f)) {
-            Icon(Icons.Default.Delete, contentDescription = "Remove Row", tint = MaterialTheme.colorScheme.onSurface)
+
+        Button(
+            onClick = {
+                val transText = transactionText.trim()
+                if (transText.isNotBlank()) {
+                    val priceRegex = """(\d+\.?\d*)\s*TK""".toRegex()
+                    val lastDigitsRegex = """\*{4}(\d{4})""".toRegex()
+                    val urlRegex = """(https?://\S+)""".toRegex()
+
+                    val priceMatch = priceRegex.find(transText)
+                    val lastDigitsMatch = lastDigitsRegex.find(transText)
+                    
+                    val allLinks = urlRegex.findAll(linkText).map { it.value }.joinToString(" ")
+
+                    val price = priceMatch?.groups?.get(1)?.value?.toDoubleOrNull()
+                    val lastDigits = lastDigitsMatch?.groups?.get(1)?.value
+
+                    if (price != null && lastDigits != null) {
+                        val coinAmount = (price / 150 * 100).toInt()
+                        val finalString = "$coinAmount coin ****${lastDigits.take(2)} $allLinks".trim()
+                        clipboardManager.setText(AnnotatedString(finalString))
+                        Log.d("ClipboardDebug", "Text set to clipboard: $finalString")
+                        val currentClipboardText = clipboardManager.getText()
+                        Log.d("ClipboardDebug", "Text read from clipboard immediately after setting: $currentClipboardText")
+                        Toast.makeText(context, "Copied!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Could not parse transaction text", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Copy to Clipboard")
+        }
+
+        Button(
+            onClick = onToggleDataLayout,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+        ) {
+            Text("Close")
         }
     }
 }
 
-@Serializable
-data class DataRow(
-    var type: Int,
-    var link: String,
-    var state: String
-)
+
 
 class ServiceBackPressedDispatcherOwner(
     override val onBackPressedDispatcher: OnBackPressedDispatcher,

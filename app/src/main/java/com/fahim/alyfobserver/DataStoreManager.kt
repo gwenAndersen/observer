@@ -20,7 +20,7 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ob
 private val BUTTON_LAYOUT_KEY = stringPreferencesKey("button_layout")
 private val HEART_BUTTON_LAYOUT_KEY = stringPreferencesKey("heart_button_layout")
 private val DRAGGABLE_BUTTONS_KEY = stringPreferencesKey("draggable_buttons")
-private val DATA_ROWS_KEY = stringPreferencesKey("data_rows")
+
 
 @Serializable
 data class ButtonConfig(
@@ -106,23 +106,7 @@ object DataStoreManager {
         }
     }
 
-    suspend fun save(context: Context, dataRows: List<DataRow>) {
-        val json = Json.encodeToString(ListSerializer(DataRow.serializer()), dataRows)
-        context.dataStore.edit {
-            preferences ->
-            preferences[DATA_ROWS_KEY] = json
-        }
-    }
-
-    suspend fun load(context: Context): List<DataRow> {
-        val preferences = context.dataStore.data.first()
-        val json = preferences[DATA_ROWS_KEY]
-        return if (json != null) {
-            Json.decodeFromString(ListSerializer(DataRow.serializer()), json)
-        } else {
-            emptyList()
-        }
-    }
+    
 
     suspend fun clearButtonLayout(context: Context) {
         context.dataStore.edit {
