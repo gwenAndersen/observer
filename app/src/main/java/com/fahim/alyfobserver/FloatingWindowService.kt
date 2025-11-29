@@ -615,7 +615,7 @@ fun WebViewLayout(
                     onClick = onLaunchTermux,
                     modifier = Modifier.size(size / 2)
                 ) {
-                    Icon(Icons.Default.Star, contentDescription = "Launch Termux")
+                    Icon(Icons.Default.Terminal, contentDescription = "Launch Termux")
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -683,33 +683,74 @@ fun TextLayout(
             Spacer(modifier = Modifier.height(8.dp)) // Add a small spacer
 
             val buttons = buttonLayout.toMutableList()
+
+            // Extract specific buttons by ID
+            val starButton = buttons.find { it.id == "paste_star" }
+            val moneyButton = buttons.find { it.id == "paste_money" }
+            val oneButton = buttons.find { it.id == "paste_one" }
+            val whiteCircleButton = buttons.find { it.id == "paste_white_circle" }
+            val stopButton = buttons.find { it.id == "paste_stop" }
+            val sparkleComboButton = buttons.find { it.id == "paste_sparkle_combo" }
+            val affordablePackageButton = buttons.find { it.id == "paste_affordable_package" }
+
+            // Remove extracted buttons from the mutable list to avoid re-rendering
+            buttons.removeAll(listOfNotNull(starButton, moneyButton, oneButton, whiteCircleButton, stopButton, sparkleComboButton, affordablePackageButton))
+
+            Row(
+                // Remove fillMaxWidth() from the Row itself, let it wrap content
+                horizontalArrangement = Arrangement.spacedBy(16.dp), // Fixed space between the two columns
+                verticalAlignment = Alignment.Top
+            ) {
+                // First Column
+                Column(
+                    horizontalAlignment = Alignment.Start, // Align buttons within this column to the start (left)
+                    verticalArrangement = Arrangement.spacedBy(8.dp) // Space between buttons in this column
+                    // Remove weight from this column
+                ) {
+                    starButton?.let {
+                        FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
+                    }
+                    moneyButton?.let {
+                        FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
+                    }
+                    oneButton?.let {
+                        FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
+                    }
+                    whiteCircleButton?.let {
+                        FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
+                    }
+                    stopButton?.let {
+                        FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
+                    }
+                }
+
+                // Remove the Spacer, as Arrangement.spacedBy handles the spacing
+                // Spacer(modifier = Modifier.weight(0.5f))
+
+                // Second Column
+                Column(
+                    horizontalAlignment = Alignment.Start, // Align buttons within this column to the start (left)
+                    verticalArrangement = Arrangement.spacedBy(8.dp) // Space between buttons in this column
+                ) {
+                    sparkleComboButton?.let {
+                        FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
+                    }
+                    affordablePackageButton?.let {
+                        FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp)) // Space after the two columns
+
+            // Render any remaining buttons (if any were not explicitly handled above)
             while (buttons.isNotEmpty()) {
                 val button = buttons.removeFirst()
-                if (button.id == "paste_star" && buttons.firstOrNull()?.id == "paste_sparkle_combo") {
-                    val secondButton = buttons.removeFirst()
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        FloatingActionButton(
-                            onClick = { onPasteText(button.text) },
-                        ) {
-                            Text(button.emoji ?: "")
-                        }
-                        FloatingActionButton(
-                            onClick = { onPasteText(secondButton.text) },
-                        ) {
-                            Text(secondButton.emoji ?: "")
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                } else {
-                    FloatingActionButton(
-                        onClick = { onPasteText(button.text) },
-                    ) {
-                        Text(button.emoji ?: "")
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
+                FloatingActionButton(
+                    onClick = { onPasteText(button.text) },
+                ) {
+                    Text(button.emoji ?: "")
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
             FloatingActionButton(
