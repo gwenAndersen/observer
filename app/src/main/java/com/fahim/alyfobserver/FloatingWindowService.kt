@@ -45,6 +45,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
@@ -615,7 +616,7 @@ fun WebViewLayout(
                     onClick = onLaunchTermux,
                     modifier = Modifier.size(size / 2)
                 ) {
-                    Icon(Icons.Default.Terminal, contentDescription = "Launch Termux")
+                    Icon(Icons.Filled.Code, contentDescription = "Launch Termux")
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
