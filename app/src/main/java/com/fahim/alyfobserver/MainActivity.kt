@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
                         onEditButtonsClick = {
                             val intent = Intent(this, ButtonEditActivity::class.java)
                             startActivity(intent)
-                        }
+                        },
+                        onNotificationListenerClick = { requestNotificationListenerPermission() }
                     )
                 }
             }
@@ -78,13 +79,27 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         startActivity(intent)
     }
+
+    private fun requestNotificationListenerPermission() {
+        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        startActivity(intent)
+    }
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> Unit, onAccessibilityClick: () -> Unit, onShowOverlayClick: () -> Unit, onEditButtonsClick: () -> Unit) {
+fun Greeting(
+    name: String,
+    modifier: Modifier = Modifier,
+    onOverlayClick: () -> Unit,
+    onAccessibilityClick: () -> Unit,
+    onShowOverlayClick: () -> Unit,
+    onEditButtonsClick: () -> Unit,
+    onNotificationListenerClick: () -> Unit
+) {
     val context = LocalContext.current
     val overlayEnabled = CheckOverlayPermission(context)
     val accessibilityEnabled = CheckAccessibilityPermission(context)
+    val notificationListenerEnabled = CheckNotificationListenerPermission(context)
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -108,6 +123,12 @@ fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> 
             Text("Accessibility Permission")
         }
         Button(
+            onClick = onNotificationListenerClick,
+            colors = ButtonDefaults.buttonColors(containerColor = if (notificationListenerEnabled) Color.Green else Color.Red)
+        ) {
+            Text("Notification Listener Permission")
+        }
+        Button(
             onClick = onShowOverlayClick,
         ) {
             Text("Show Overlay")
@@ -118,13 +139,6 @@ fun Greeting(name: String, modifier: Modifier = Modifier, onOverlayClick: () -> 
         ) {
             Text("Edit Buttons")
         }
-        Button(
-            onClick = onEditButtonsClick,
-        ) {
-            Text("Edit Buttons")
-        }
-        
-        
     }
 }
 
@@ -144,6 +158,12 @@ fun CheckAccessibilityPermission(context: Context): Boolean {
     return enabledServices?.contains(accessibilityService.flattenToString()) == true
 }
 
+@Composable
+fun CheckNotificationListenerPermission(context: Context): Boolean {
+    val componentName = ComponentName(context, TikTokNotificationListener::class.java)
+    val enabledListeners = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+    return enabledListeners?.contains(componentName.flattenToString()) == true
+}
 
 @Preview(showBackground = true)
 @Composable
@@ -154,7 +174,8 @@ fun DefaultPreview() {
             onOverlayClick = { },
             onAccessibilityClick = { },
             onShowOverlayClick = { },
-            onEditButtonsClick = { }
+            onEditButtonsClick = { },
+            onNotificationListenerClick = { }
         )
     }
 }

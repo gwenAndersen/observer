@@ -39,6 +39,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -56,6 +58,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LooksOne
 import androidx.compose.material.icons.filled.LooksTwo
 import androidx.compose.material.icons.filled.Looks3
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Web
@@ -78,6 +81,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.ComposeView
@@ -112,9 +116,18 @@ import kotlin.math.roundToInt
 import com.google.accompanist.web.WebView
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.IntOffset
+import android.app.PendingIntent
+import android.app.RemoteInput
+
+data class TikTokNotification(
+    val title: String?,
+    val text: String?,
+    val replyAction: PendingIntent?,
+    val remoteInputBundle: Bundle?
+)
 
 
-enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT, HEART_LAYOUT }
+enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT, HEART_LAYOUT, TIKTOK_LAYOUT, NOTIFICATION_LIST_LAYOUT }
 
 class ServiceLifecycleOwner : LifecycleOwner {
     private val registry = LifecycleRegistry(this)
@@ -139,6 +152,10 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private var showDataLayout = mutableStateOf(false)
     private var showWebViewLayout = mutableStateOf(false)
     private var showHeartLayout = mutableStateOf(false)
+    private var showTikTokLayout = mutableStateOf(false)
+    private var showNotificationListLayout = mutableStateOf(false)
+    private val notificationList = mutableStateListOf<String>()
+    private var currentTikTokNotification = mutableStateOf<TikTokNotification?>(null)
     private var currentLayoutState = mutableStateOf(OverlayLayoutState.MAIN)
     private var isOverlayInputFocused = mutableStateOf(false)
     private var isMinimized = mutableStateOf(false)
@@ -251,13 +268,61 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
 
         val layoutUpdateFilter = IntentFilter("com.fahim.alyfobserver.LAYOUT_UPDATED")
         registerReceiver(layoutUpdateReceiver, layoutUpdateFilter, RECEIVER_NOT_EXPORTED)
+
+        val tikTokFilter = IntentFilter(TikTokNotificationListener.ACTION_TIKTOK_NOTIFICATION)
+        registerReceiver(tikTokNotificationReceiver, tikTokFilter, RECEIVER_NOT_EXPORTED)
+        Log.d("FloatingWindowService", "tikTokNotificationReceiver registered for action: ${TikTokNotificationListener.ACTION_TIKTOK_NOTIFICATION}")
+
+        val generalNotificationFilter = IntentFilter(TikTokNotificationListener.ACTION_GENERAL_NOTIFICATION)
+        registerReceiver(generalNotificationReceiver, generalNotificationFilter, RECEIVER_NOT_EXPORTED)
+        Log.d("FloatingWindowService", "generalNotificationReceiver registered for action: ${TikTokNotificationListener.ACTION_GENERAL_NOTIFICATION}")
+    }
+
+    private val generalNotificationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            Log.d("FloatingWindowService", "generalNotificationReceiver: Received broadcast for action: ${intent?.action}")
+            if (intent?.action == TikTokNotificationListener.ACTION_GENERAL_NOTIFICATION) {
+                val packageName = intent.getStringExtra("package")
+                val title = intent.getStringExtra("title")
+                val text = intent.getStringExtra("text")
+
+                if (notificationList.size > 50) {
+                    notificationList.clear()
+                }
+
+                notificationList.add("[$packageName] $title: $text")
+            }
+        }
+    }
+
+    private val tikTokNotificationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            Log.d("FloatingWindowService", "tikTokNotificationReceiver: Received broadcast for action: ${intent?.action}. Processing TikTok notification.")
+            if (intent?.action == TikTokNotificationListener.ACTION_TIKTOK_NOTIFICATION) {
+                val title = intent.getStringExtra("title")
+                val text = intent.getStringExtra("text")
+                val replyAction = intent.getParcelableExtra<PendingIntent>("reply_action")
+                val remoteInputBundle = intent.getBundleExtra("remote_input_bundle")
+
+                currentTikTokNotification.value = TikTokNotification(
+                    title = title,
+                    text = text,
+                    replyAction = replyAction,
+                    remoteInputBundle = remoteInputBundle
+                )
+                showTikTokLayout.value = true
+                currentLayoutState.value = OverlayLayoutState.TIKTOK_LAYOUT
+                Log.d("FloatingWindowService", "tikTokNotificationReceiver: Calling showOverlay() to display TikTok layout.")
+                showOverlay()
+            }
+        }
     }
 
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         Log.d("FloatingWindowService", "onStartCommand: Service is started.\n")
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun launchApp(packageName: String) {
@@ -282,6 +347,8 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         Log.d("FloatingWindowService", "onDestroy: Service is being destroyed.")
         unregisterReceiver(broadcastReceiver)
         unregisterReceiver(layoutUpdateReceiver)
+        unregisterReceiver(tikTokNotificationReceiver)
+        unregisterReceiver(generalNotificationReceiver)
         hideOverlay()
         _viewModelStore.clear()
     }
@@ -296,10 +363,11 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     }
 
     private fun showOverlay() {
-        Log.d("FloatingWindowService", "showOverlay: Attempting to show overlay.")
+        Log.d("FloatingWindowService", "showOverlay: CALLED")
         if (overlayView == null) {
-            Log.d("FloatingWindowService", "showOverlay: Recreating overlayView.")
+            Log.d("FloatingWindowService", "showOverlay: overlayView is null, creating new view.")
             overlayView = ComposeView(this).apply {
+                Log.d("FloatingWindowService", "showOverlay: ComposeView created.")
                 // Set up LifecycleOwner, ViewModelStoreOwner, and SavedStateRegistryOwner
                 lifecycleOwner = ServiceLifecycleOwner()
                 
@@ -309,8 +377,10 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 setViewTreeLifecycleOwner(lifecycleOwner)
                                 setViewTreeViewModelStoreOwner(this@FloatingWindowService)
                 setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+                Log.d("FloatingWindowService", "showOverlay: Lifecycle owners set.")
 
                 setContent {
+                    Log.d("FloatingWindowService", "showOverlay: setContent CALLED")
                     CompositionLocalProvider(
                         LocalOnBackPressedDispatcherOwner provides ServiceBackPressedDispatcherOwner(
                             onBackPressedDispatcher,
@@ -326,8 +396,11 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     showDataLayout = showDataLayout,
                                     showWebViewLayout = showWebViewLayout,
                                     showHeartLayout = showHeartLayout,
+                                    showTikTokLayout = showTikTokLayout,
+                                    showNotificationListLayout = showNotificationListLayout,
                                     clipboardButtonLayout = clipboardButtonLayout,
                                     heartButtonLayout = heartButtonLayout,
+                                    notificationList = notificationList,
                                     onClose = { hideOverlay() },
                                     onToggleExpand = {
                                         isExpanded.value = !isExpanded.value
@@ -338,6 +411,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     onToggleDataLayout = { showDataLayout.value = !showDataLayout.value; currentLayoutState.value = if (showDataLayout.value) OverlayLayoutState.DATA_LAYOUT else OverlayLayoutState.MAIN },
                                     onToggleWebViewLayout = { showWebViewLayout.value = !showWebViewLayout.value; currentLayoutState.value = if (showWebViewLayout.value) OverlayLayoutState.WEB_VIEW_LAYOUT else OverlayLayoutState.MAIN },
                                     onToggleHeartLayout = { showHeartLayout.value = !showHeartLayout.value; currentLayoutState.value = if (showHeartLayout.value) OverlayLayoutState.HEART_LAYOUT else OverlayLayoutState.MAIN },
+                                    onToggleNotificationListLayout = { showNotificationListLayout.value = !showNotificationListLayout.value; currentLayoutState.value = if (showNotificationListLayout.value) OverlayLayoutState.NOTIFICATION_LIST_LAYOUT else OverlayLayoutState.MAIN },
                                     onPasteText = { text -> pasteText(text) },
                                     onLaunchTermux = { launchApp("com.termux") },
                                     currentLayoutState = currentLayoutState,
@@ -345,19 +419,21 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                         isMinimized.value = false
                                         isExpanded.value = true
                                         when (state) {
-                                            OverlayLayoutState.MAIN -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false }
-                                            OverlayLayoutState.TEXT_LAYOUT -> { showTextLayout.value = true; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false }
-                                            OverlayLayoutState.DATA_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = true; showWebViewLayout.value = false; showHeartLayout.value = false }
-                                            OverlayLayoutState.WEB_VIEW_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = true; showHeartLayout.value = false }
-                                            OverlayLayoutState.HEART_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = true }
+                                            OverlayLayoutState.MAIN -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.TEXT_LAYOUT -> { showTextLayout.value = true; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.DATA_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = true; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.WEB_VIEW_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = true; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.HEART_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = true; showTikTokLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.TIKTOK_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = true; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.NOTIFICATION_LIST_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = true }
                                         }
                                         currentLayoutState.value = state
                                         resetIdleTimer()
                                     },
-                                    onSaveDataFromWebView = { 
+                                    onSaveDataFromWebView = {
                                         // No-op
                                     },
-                                    onLoadDataForWebView = { 
+                                    onLoadDataForWebView = {
                                         ""
                                      },
                                     onWebViewCreated = { webView -> webViewInstance = webView },
@@ -367,6 +443,30 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     },
                                     isMinimized = isMinimized.value,
                                     onIsMinimizedChange = { isMinimized.value = it },
+                                    currentTikTokNotification = currentTikTokNotification,
+                                    onReply = { replyText ->
+                                        currentTikTokNotification.value?.let { notification ->
+                                            val remoteInputBundle = notification.remoteInputBundle
+                                            val replyAction = notification.replyAction
+                                            if (remoteInputBundle != null && replyAction != null) {
+                                                val resultKey = remoteInputBundle.getString("resultKey")
+                                                if (resultKey != null) {
+                                                    val remoteInput = RemoteInput.Builder(resultKey).setLabel(remoteInputBundle.getCharSequence("label")).build()
+                                                    val resultBundle = Bundle()
+                                                    resultBundle.putCharSequence(remoteInput.resultKey, replyText)
+                                                    val replyIntent = Intent()
+                                                    RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
+                                                    try {
+                                                        replyAction.send(this@FloatingWindowService, 0, replyIntent)
+                                                        showTikTokLayout.value = false
+                                                        currentLayoutState.value = OverlayLayoutState.MAIN
+                                                    } catch (e: PendingIntent.CanceledException) {
+                                                        Log.e("FloatingWindowService", "Could not send reply", e)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
                                     modifier = Modifier
                                         .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
                                         .pointerInput(Unit) {
@@ -390,27 +490,42 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                             }
                         }
                     }
+                    Log.d("FloatingWindowService", "showOverlay: setContent COMPLETED")
                 }
             }
-            windowManager.addView(overlayView, params)
-            overlayView?.viewTreeObserver?.addOnGlobalLayoutListener(globalLayoutListener)
-            screenHeight = resources.displayMetrics.heightPixels
-            resetIdleTimer()
+            try {
+                Log.d("FloatingWindowService", "showOverlay: Attempting to add overlayView to WindowManager.")
+                windowManager.addView(overlayView, params)
+                Log.d("FloatingWindowService", "showOverlay: addView SUCCEEDED")
+                overlayView?.viewTreeObserver?.addOnGlobalLayoutListener(globalLayoutListener)
+                screenHeight = resources.displayMetrics.heightPixels
+                resetIdleTimer()
+            } catch (e: Exception) {
+                Log.e("FloatingWindowService", "showOverlay: addView FAILED", e)
+            }
+        } else {
+            Log.d("FloatingWindowService", "showOverlay: overlayView is NOT null, just updating layout.")
+            // This is where you might need to force a recomposition if the view already exists
         }
     }
 
     private fun hideOverlay() {
-        Log.d("FloatingWindowService", "hideOverlay: Attempting to hide overlay.")
+        Log.d("FloatingWindowService", "hideOverlay: CALLED")
         idleHandler.removeCallbacks(idleRunnable)
-        overlayView?.let {
-            windowManager.removeView(it)
-            it.viewTreeObserver?.removeOnGlobalLayoutListener(globalLayoutListener) // Remove listener
-            Log.d("FloatingWindowService", "hideOverlay: Overlay view removed successfully.")
+        try {
+            overlayView?.let {
+                windowManager.removeView(it)
+                it.viewTreeObserver?.removeOnGlobalLayoutListener(globalLayoutListener)
+                Log.d("FloatingWindowService", "hideOverlay: Overlay view removed successfully.")
+            }
+            overlayView = null
+            lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+            lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+            lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+            Log.d("FloatingWindowService", "hideOverlay: Lifecycle events sent.")
+        } catch (e: Exception) {
+            Log.e("FloatingWindowService", "hideOverlay: FAILED", e)
         }
-        overlayView = null
-        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
-        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
-        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
     }
 
     private fun pasteText(text: String) {
@@ -432,14 +547,18 @@ fun OverlayList(
     showDataLayout: MutableState<Boolean>,
     showWebViewLayout: MutableState<Boolean>,
     showHeartLayout: MutableState<Boolean>,
+    showTikTokLayout: MutableState<Boolean>,
+    showNotificationListLayout: MutableState<Boolean>,
     clipboardButtonLayout: List<ButtonConfig>,
     heartButtonLayout: List<ButtonConfig>,
+    notificationList: List<String>,
     onClose: () -> Unit,
     onToggleExpand: () -> Unit,
     onToggleTextLayout: () -> Unit,
     onToggleDataLayout: () -> Unit,
     onToggleWebViewLayout: () -> Unit,
     onToggleHeartLayout: () -> Unit,
+    onToggleNotificationListLayout: () -> Unit,
     onPasteText: (String) -> Unit,
     onLaunchTermux: () -> Unit,
     currentLayoutState: MutableState<OverlayLayoutState>,
@@ -450,6 +569,8 @@ fun OverlayList(
     onInputFocusChanged: (Boolean) -> Unit,
     isMinimized: Boolean,
     onIsMinimizedChange: (Boolean) -> Unit,
+    currentTikTokNotification: MutableState<TikTokNotification?>,
+    onReply: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val alpha by animateFloatAsState(if (isMinimized) 0.5f else 1f)
@@ -513,6 +634,20 @@ fun OverlayList(
             size = size,
             onLaunchTermux = onLaunchTermux
         )
+    } else if (showTikTokLayout.value) {
+        TikTokLayout(
+            notification = currentTikTokNotification.value,
+            onClose = {
+                showTikTokLayout.value = false
+                currentLayoutState.value = OverlayLayoutState.MAIN
+            },
+            onReply = onReply
+        )
+    } else if (showNotificationListLayout.value) {
+        NotificationListLayout(
+            notifications = notificationList,
+            onClose = { onToggleNotificationListLayout() }
+        )
     } else {
         Column(modifier = rootModifier) {
             if (isExpanded.value) {
@@ -554,6 +689,13 @@ fun OverlayList(
                         modifier = Modifier.size(size)
                     ) {
                         Icon(Icons.Default.Web, contentDescription = "Show WebView Layout")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                     FloatingActionButton(
+                        onClick = onToggleNotificationListLayout,
+                        modifier = Modifier.size(size)
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = "Show Notification List")
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -866,6 +1008,59 @@ fun GeneratorLayout(context: Context, onToggleDataLayout: () -> Unit, onInputFoc
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TikTokLayout(
+    notification: TikTokNotification?,
+    onClose: () -> Unit,
+    onReply: (String) -> Unit
+) {
+    Log.d("FloatingWindowService", "TikTokLayout composable recomposed. Notification: $notification")
+    if (notification == null) {
+        Log.d("FloatingWindowService", "TikTokLayout: notification is null, returning.")
+        return
+    }
+
+    var replyText by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .padding(16.dp)
+            .background(MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(text = notification.title ?: "No Title", fontWeight = FontWeight.Bold)
+        Text(text = notification.text ?: "No Text")
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = replyText,
+            onValueChange = { replyText = it },
+            label = { Text("Your reply") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Button(onClick = {
+                Log.d("FloatingWindowService", "TikTokLayout: Close button clicked.")
+                onClose()
+            }) {
+                Text("Close")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                Log.d("FloatingWindowService", "TikTokLayout: Reply button clicked with text: $replyText")
+                onReply(replyText)
+            }) {
+                Text("Reply")
+            }
+        }
+    }
+}
+
 
 
 class ServiceBackPressedDispatcherOwner(
@@ -884,5 +1079,32 @@ class WebAppInterface(private val mContext: Context, private val onSaveData: (St
     fun loadData(): String {
         Log.d("WebAppInterface", "Requesting data from Android")
         return onLoadData()
+    }
+}
+
+@Composable
+fun NotificationListLayout(
+    notifications: List<String>,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(0.8f)
+            .background(Color.Black.copy(alpha = 0.7f), shape = MaterialTheme.shapes.medium)
+            .padding(8.dp)
+    ) {
+        Button(onClick = onClose) {
+            Text("Close")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        LazyColumn {
+            items(notifications) { notification ->
+                Text(
+                    text = notification,
+                    color = Color.White,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
     }
 }
