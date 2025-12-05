@@ -1,11 +1,14 @@
 package com.fahim.alyfobserver
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -17,6 +20,7 @@ import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -115,19 +119,33 @@ import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
 import com.google.accompanist.web.WebView
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.IntOffset
 import android.app.PendingIntent
 import android.app.RemoteInput
 
+
+data class Message(
+    val text: String,
+    val isFromUser: Boolean
+)
+
+data class Conversation(
+    val sender: String,
+    val messages: MutableList<Message>,
+    val replyAction: PendingIntent?,
+    val remoteInputBundle: Bundle?
+)
+
 data class TikTokNotification(
-    val title: String?,
     val text: String?,
     val replyAction: PendingIntent?,
     val remoteInputBundle: Bundle?
 )
 
 
-enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT, HEART_LAYOUT, TIKTOK_LAYOUT, NOTIFICATION_LIST_LAYOUT }
+
+enum class OverlayLayoutState { MAIN, TEXT_LAYOUT, DATA_LAYOUT, WEB_VIEW_LAYOUT, HEART_LAYOUT, TIKTOK_LAYOUT, NOTIFICATION_LIST_LAYOUT, CONVERSATION_LIST_LAYOUT, CONVERSATION_HISTORY_LAYOUT }
 
 class ServiceLifecycleOwner : LifecycleOwner {
     private val registry = LifecycleRegistry(this)
@@ -152,14 +170,22 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private var showDataLayout = mutableStateOf(false)
     private var showWebViewLayout = mutableStateOf(false)
     private var showHeartLayout = mutableStateOf(false)
-    private var showTikTokLayout = mutableStateOf(false)
     private var showNotificationListLayout = mutableStateOf(false)
     private val notificationList = mutableStateListOf<String>()
-    private var currentTikTokNotification = mutableStateOf<TikTokNotification?>(null)
+    private val conversations = mutableStateListOf<Conversation>()
+    private var activeConversation = mutableStateOf<Conversation?>(null)
     private var currentLayoutState = mutableStateOf(OverlayLayoutState.MAIN)
     private var isOverlayInputFocused = mutableStateOf(false)
     private var isMinimized = mutableStateOf(false)
     private var isFullScreen by mutableStateOf(false) // Added back
+
+    // Variables for the new Conversation Head feature
+    private var conversationHeadView: ComposeView? = null
+    private lateinit var conversationHeadParams: WindowManager.LayoutParams
+    private var isConversationHeadExpanded = mutableStateOf(false)
+    private var activeConversationInHead = mutableStateOf<Conversation?>(null)
+    private var conversationHeadOffsetX by mutableStateOf(0f)
+    private var conversationHeadOffsetY by mutableStateOf(0f)
     
     private var screenHeight = 0 // Added for keyboard detection
     private var lastYPosition = 100 // Added to store last manual Y position
@@ -219,7 +245,9 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
             // Keyboard is closed, restore last known manual Y position
             params.y = lastYPosition
         }
-        windowManager.updateViewLayout(overlayView, params)
+        overlayView?.let {
+            windowManager.updateViewLayout(it, params)
+        }
     }
 
     private val broadcastReceiver = object : BroadcastReceiver() {
@@ -235,6 +263,15 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     override fun onCreate() {
         super.onCreate()
         Log.d("FloatingWindowService", "onCreate: Service is being created.")
+
+        createNotificationChannel()
+        val notification = NotificationCompat.Builder(this, "floating_window_service_channel")
+            .setContentTitle("Alyf Observer")
+            .setContentText("Keeping the overlay active.")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .build()
+
+        startForeground(1, notification)
 
         lifecycleScope.launch {
             clipboardButtonLayout = DataStoreManager.loadButtonLayout(this@FloatingWindowService)
@@ -304,16 +341,21 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 val replyAction = intent.getParcelableExtra<PendingIntent>("reply_action")
                 val remoteInputBundle = intent.getBundleExtra("remote_input_bundle")
 
-                currentTikTokNotification.value = TikTokNotification(
-                    title = title,
-                    text = text,
-                    replyAction = replyAction,
-                    remoteInputBundle = remoteInputBundle
-                )
-                showTikTokLayout.value = true
-                currentLayoutState.value = OverlayLayoutState.TIKTOK_LAYOUT
-                Log.d("FloatingWindowService", "tikTokNotificationReceiver: Calling showOverlay() to display TikTok layout.")
-                showOverlay()
+                val sender = title ?: "Unknown"
+                val conversation = conversations.find { it.sender == sender }
+
+                if (conversation != null) {
+                    conversation.messages.add(Message(text ?: "", false))
+                } else {
+                    val newConversation = Conversation(
+                        sender = sender,
+                        messages = mutableListOf(Message(text ?: "", false)),
+                        replyAction = replyAction,
+                        remoteInputBundle = remoteInputBundle
+                    )
+                    conversations.add(newConversation)
+                }
+                showConversationHead()
             }
         }
     }
@@ -323,6 +365,160 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         super.onStartCommand(intent, flags, startId)
         Log.d("FloatingWindowService", "onStartCommand: Service is started.\n")
         return START_STICKY
+    }
+
+    private fun showConversationHead() {
+        if (conversationHeadView == null) {
+            conversationHeadParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = 0
+                y = 200 // Initial position
+            }
+
+            conversationHeadView = ComposeView(this).apply {
+                val conversationLifecycleOwner = ServiceLifecycleOwner()
+                conversationLifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+                conversationLifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_START)
+                conversationLifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+                setViewTreeLifecycleOwner(conversationLifecycleOwner)
+                setViewTreeViewModelStoreOwner(this@FloatingWindowService)
+                setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+                tag = conversationLifecycleOwner
+
+                setContent {
+                    NewAndroidProjectTheme {
+                        MaterialTheme {
+                            val rootModifier = Modifier.offset {
+                                IntOffset(
+                                    conversationHeadOffsetX.roundToInt(),
+                                    conversationHeadOffsetY.roundToInt()
+                                )
+                            }
+
+                            if (!isConversationHeadExpanded.value && activeConversationInHead.value == null) {
+                                // --- Collapsed, Draggable Icon ---
+                                var isDragging by remember { mutableStateOf(false) }
+                                Box(
+                                    modifier = rootModifier
+                                        .size(56.dp)
+                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                        .pointerInput(Unit) {
+                                            detectDragGestures(
+                                                onDragStart = { isDragging = false },
+                                                onDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    isDragging = true
+                                                    conversationHeadOffsetX += dragAmount.x
+                                                    conversationHeadOffsetY += dragAmount.y
+                                                },
+                                                onDragEnd = {
+                                                    if (!isDragging) {
+                                                        // This was a TAP
+                                                        isConversationHeadExpanded.value = true
+                                                    } else {
+                                                        // This was a DRAG
+                                                        conversationHeadParams.x += conversationHeadOffsetX.roundToInt()
+                                                        conversationHeadParams.y += conversationHeadOffsetY.roundToInt()
+                                                        conversationHeadOffsetX = 0f
+                                                        conversationHeadOffsetY = 0f
+                                                        windowManager.updateViewLayout(
+                                                            this@apply,
+                                                            conversationHeadParams
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                        }
+                                )
+                                {
+                                    Icon(
+                                        Icons.Default.Send,
+                                        contentDescription = "Show Conversations",
+                                        tint = Color.White,
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                            } else {
+                                // --- Expanded, Non-Draggable View ---
+                                Box(modifier = rootModifier) {
+                                    if (activeConversationInHead.value != null) {
+                                        // Show Chat History
+                                        ConversationHistoryLayout(
+                                            conversation = activeConversationInHead.value!!,
+                                            onReply = { replyText ->
+                                                activeConversationInHead.value?.let { conversation ->
+                                                    val remoteInputBundle = conversation.remoteInputBundle
+                                                    val replyAction = conversation.replyAction
+                                                    if (remoteInputBundle != null && replyAction != null) {
+                                                        val resultKey = remoteInputBundle.getString("resultKey")
+                                                        if (resultKey != null) {
+                                                            val remoteInput = RemoteInput.Builder(resultKey).setLabel(remoteInputBundle.getCharSequence("label")).build()
+                                                            val resultBundle = Bundle()
+                                                            resultBundle.putCharSequence(remoteInput.resultKey, replyText)
+                                                            val replyIntent = Intent()
+                                                            RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
+                                                            try {
+                                                                replyAction.send(this@FloatingWindowService, 0, replyIntent)
+                                                                conversation.messages.add(Message(replyText, true))
+                                                            } catch (e: PendingIntent.CanceledException) {
+                                                                Log.e("FloatingWindowService", "Could not send reply", e)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            onClose = { activeConversationInHead.value = null },
+                                            onInputFocusChanged = { isFocused ->
+                                                if (isFocused) {
+                                                    conversationHeadParams.flags = conversationHeadParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                                                } else {
+                                                    conversationHeadParams.flags = conversationHeadParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                                }
+                                                windowManager.updateViewLayout(this@apply, conversationHeadParams)
+                                            }
+                                        )
+                                    } else {
+                                        // Show Conversation List
+                                        Column {
+                                            ConversationListLayout(
+                                                conversations = conversations,
+                                                onConversationClick = { conversation ->
+                                                    activeConversationInHead.value = conversation
+                                                }
+                                            )
+                                            Button(onClick = { hideConversationHead() }) {
+                                                Text("Close All")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            windowManager.addView(conversationHeadView, conversationHeadParams)
+        }
+    }
+
+    private fun hideConversationHead() {
+        conversationHeadView?.let { view ->
+            windowManager.removeView(view)
+            (view.tag as? ServiceLifecycleOwner)?.let {
+                it.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+                it.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+                it.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+            }
+            conversationHeadView = null
+            isConversationHeadExpanded.value = false
+            activeConversationInHead.value = null
+        }
     }
 
     private fun launchApp(packageName: String) {
@@ -343,15 +539,15 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        Log.d("FloatingWindowService", "onDestroy: Service is being destroyed.")
-        unregisterReceiver(broadcastReceiver)
-        unregisterReceiver(layoutUpdateReceiver)
-        unregisterReceiver(tikTokNotificationReceiver)
-        unregisterReceiver(generalNotificationReceiver)
-        hideOverlay()
-        _viewModelStore.clear()
-    }
+    super.onDestroy()
+    Log.d("FloatingWindowService", "onDestroy: Service is being destroyed.")
+    unregisterReceiver(broadcastReceiver)
+    unregisterReceiver(layoutUpdateReceiver)
+    unregisterReceiver(tikTokNotificationReceiver)
+    unregisterReceiver(generalNotificationReceiver)
+    hideOverlay()
+    _viewModelStore.clear()
+}
 
     private fun updateOverlayFlags() {
         if (isOverlayInputFocused.value) {
@@ -370,12 +566,12 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 Log.d("FloatingWindowService", "showOverlay: ComposeView created.")
                 // Set up LifecycleOwner, ViewModelStoreOwner, and SavedStateRegistryOwner
                 lifecycleOwner = ServiceLifecycleOwner()
-                
+
                 lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
                 lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_START)
                 lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
                 setViewTreeLifecycleOwner(lifecycleOwner)
-                                setViewTreeViewModelStoreOwner(this@FloatingWindowService)
+                setViewTreeViewModelStoreOwner(this@FloatingWindowService)
                 setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
                 Log.d("FloatingWindowService", "showOverlay: Lifecycle owners set.")
 
@@ -396,7 +592,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     showDataLayout = showDataLayout,
                                     showWebViewLayout = showWebViewLayout,
                                     showHeartLayout = showHeartLayout,
-                                    showTikTokLayout = showTikTokLayout,
                                     showNotificationListLayout = showNotificationListLayout,
                                     clipboardButtonLayout = clipboardButtonLayout,
                                     heartButtonLayout = heartButtonLayout,
@@ -419,13 +614,15 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                         isMinimized.value = false
                                         isExpanded.value = true
                                         when (state) {
-                                            OverlayLayoutState.MAIN -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
-                                            OverlayLayoutState.TEXT_LAYOUT -> { showTextLayout.value = true; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
-                                            OverlayLayoutState.DATA_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = true; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
-                                            OverlayLayoutState.WEB_VIEW_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = true; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = false }
-                                            OverlayLayoutState.HEART_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = true; showTikTokLayout.value = false; showNotificationListLayout.value = false }
-                                            OverlayLayoutState.TIKTOK_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = true; showNotificationListLayout.value = false }
-                                            OverlayLayoutState.NOTIFICATION_LIST_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showTikTokLayout.value = false; showNotificationListLayout.value = true }
+                                            OverlayLayoutState.MAIN -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.TEXT_LAYOUT -> { showTextLayout.value = true; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.DATA_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = true; showWebViewLayout.value = false; showHeartLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.WEB_VIEW_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = true; showHeartLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.HEART_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = true; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.TIKTOK_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showNotificationListLayout.value = false }
+                                            OverlayLayoutState.NOTIFICATION_LIST_LAYOUT -> { showTextLayout.value = false; showDataLayout.value = false; showWebViewLayout.value = false; showHeartLayout.value = false; showNotificationListLayout.value = true }
+                                            OverlayLayoutState.CONVERSATION_LIST_LAYOUT -> { currentLayoutState.value = OverlayLayoutState.CONVERSATION_LIST_LAYOUT }
+                                            OverlayLayoutState.CONVERSATION_HISTORY_LAYOUT -> { currentLayoutState.value = OverlayLayoutState.CONVERSATION_HISTORY_LAYOUT }
                                         }
                                         currentLayoutState.value = state
                                         resetIdleTimer()
@@ -435,7 +632,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     },
                                     onLoadDataForWebView = {
                                         ""
-                                     },
+                                    },
                                     onWebViewCreated = { webView -> webViewInstance = webView },
                                     onInputFocusChanged = { isFocused ->
                                         isOverlayInputFocused.value = isFocused
@@ -443,29 +640,27 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     },
                                     isMinimized = isMinimized.value,
                                     onIsMinimizedChange = { isMinimized.value = it },
-                                    currentTikTokNotification = currentTikTokNotification,
-                                    onReply = { replyText ->
-                                        currentTikTokNotification.value?.let { notification ->
-                                            val remoteInputBundle = notification.remoteInputBundle
-                                            val replyAction = notification.replyAction
-                                            if (remoteInputBundle != null && replyAction != null) {
-                                                val resultKey = remoteInputBundle.getString("resultKey")
-                                                if (resultKey != null) {
-                                                    val remoteInput = RemoteInput.Builder(resultKey).setLabel(remoteInputBundle.getCharSequence("label")).build()
-                                                    val resultBundle = Bundle()
-                                                    resultBundle.putCharSequence(remoteInput.resultKey, replyText)
-                                                    val replyIntent = Intent()
-                                                    RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
-                                                    try {
-                                                        replyAction.send(this@FloatingWindowService, 0, replyIntent)
-                                                        showTikTokLayout.value = false
-                                                        currentLayoutState.value = OverlayLayoutState.MAIN
-                                                    } catch (e: PendingIntent.CanceledException) {
-                                                        Log.e("FloatingWindowService", "Could not send reply", e)
-                                                    }
+                                    conversations = conversations,
+                                    onReply = { replyText ->                                        activeConversation.value?.let { conversation ->
+                                        val remoteInputBundle = conversation.remoteInputBundle
+                                        val replyAction = conversation.replyAction
+                                        if (remoteInputBundle != null && replyAction != null) {
+                                            val resultKey = remoteInputBundle.getString("resultKey")
+                                            if (resultKey != null) {
+                                                val remoteInput = RemoteInput.Builder(resultKey).setLabel(remoteInputBundle.getCharSequence("label")).build()
+                                                val resultBundle = Bundle()
+                                                resultBundle.putCharSequence(remoteInput.resultKey, replyText)
+                                                val replyIntent = Intent()
+                                                RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
+                                                try {
+                                                    replyAction.send(this@FloatingWindowService, 0, replyIntent)
+                                                    conversation.messages.add(Message(replyText, true))
+                                                } catch (e: PendingIntent.CanceledException) {
+                                                    Log.e("FloatingWindowService", "Could not send reply", e)
                                                 }
                                             }
                                         }
+                                    }
                                     },
                                     modifier = Modifier
                                         .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
@@ -509,6 +704,12 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         }
     }
 
+
+
+
+
+
+
     private fun hideOverlay() {
         Log.d("FloatingWindowService", "hideOverlay: CALLED")
         idleHandler.removeCallbacks(idleRunnable)
@@ -537,6 +738,16 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         Log.d("FloatingWindowService", "Sent broadcast to paste text: $text")
     }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION.SDK_INT) {        val serviceChannel = NotificationChannel(
+            "floating_window_service_channel",
+            "Floating Window Service Channel",
+            NotificationManager.IMPORTANCE_DEFAULT
+        )
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(serviceChannel)
+    }
+}
 }
 
 @Composable
@@ -547,7 +758,6 @@ fun OverlayList(
     showDataLayout: MutableState<Boolean>,
     showWebViewLayout: MutableState<Boolean>,
     showHeartLayout: MutableState<Boolean>,
-    showTikTokLayout: MutableState<Boolean>,
     showNotificationListLayout: MutableState<Boolean>,
     clipboardButtonLayout: List<ButtonConfig>,
     heartButtonLayout: List<ButtonConfig>,
@@ -569,7 +779,7 @@ fun OverlayList(
     onInputFocusChanged: (Boolean) -> Unit,
     isMinimized: Boolean,
     onIsMinimizedChange: (Boolean) -> Unit,
-    currentTikTokNotification: MutableState<TikTokNotification?>,
+    conversations: List<Conversation>,
     onReply: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -633,15 +843,6 @@ fun OverlayList(
             alpha = alpha,
             size = size,
             onLaunchTermux = onLaunchTermux
-        )
-    } else if (showTikTokLayout.value) {
-        TikTokLayout(
-            notification = currentTikTokNotification.value,
-            onClose = {
-                showTikTokLayout.value = false
-                currentLayoutState.value = OverlayLayoutState.MAIN
-            },
-            onReply = onReply
         )
     } else if (showNotificationListLayout.value) {
         NotificationListLayout(
@@ -850,19 +1051,19 @@ fun TextLayout(
                     verticalArrangement = Arrangement.spacedBy(8.dp) // Space between buttons in this column
                     // Remove weight from this column
                 ) {
-                    starButton?.let {
+                    starButton?.let { 
                         FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
                     }
-                    moneyButton?.let {
+                    moneyButton?.let { 
                         FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
                     }
-                    oneButton?.let {
+                    oneButton?.let { 
                         FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
                     }
-                    whiteCircleButton?.let {
+                    whiteCircleButton?.let { 
                         FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
                     }
-                    stopButton?.let {
+                    stopButton?.let { 
                         FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
                     }
                 }
@@ -875,10 +1076,10 @@ fun TextLayout(
                     horizontalAlignment = Alignment.Start, // Align buttons within this column to the start (left)
                     verticalArrangement = Arrangement.spacedBy(8.dp) // Space between buttons in this column
                 ) {
-                    sparkleComboButton?.let {
+                    sparkleComboButton?.let { 
                         FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
                     }
-                    affordablePackageButton?.let {
+                    affordablePackageButton?.let { 
                         FloatingActionButton(onClick = { onPasteText(it.text) }) { Text(it.emoji ?: "") }
                     }
                 }
@@ -947,7 +1148,7 @@ fun GeneratorLayout(context: Context, onToggleDataLayout: () -> Unit, onInputFoc
             Spacer(modifier = Modifier.width(8.dp))
             IconButton(onClick = { 
                 if (linkText.isNotBlank()) {
-                    val urlRegex = """(https?://\S+)""".toRegex()
+                    val urlRegex = "(https?://\\S+)".toRegex()
                     urlRegex.find(linkText)?.value?.let { linkToOpen ->
                         try {
                             val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(linkToOpen)).apply {
@@ -968,9 +1169,9 @@ fun GeneratorLayout(context: Context, onToggleDataLayout: () -> Unit, onInputFoc
             onClick = {
                 val transText = transactionText.trim()
                 if (transText.isNotBlank()) {
-                    val priceRegex = """(\d+\.?\d*)\s*TK""".toRegex()
-                    val lastDigitsRegex = """\*{4}(\d{4})""".toRegex()
-                    val urlRegex = """(https?://\S+)""".toRegex()
+                    val priceRegex = "(\\d+\\.?\\d*)\\s*TK".toRegex()
+                    val lastDigitsRegex = "\\*{4}(\\d{4})".toRegex()
+                    val urlRegex = "(https?://\\S+)".toRegex()
 
                     val priceMatch = priceRegex.find(transText)
                     val lastDigitsMatch = lastDigitsRegex.find(transText)
@@ -1007,61 +1208,6 @@ fun GeneratorLayout(context: Context, onToggleDataLayout: () -> Unit, onInputFoc
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TikTokLayout(
-    notification: TikTokNotification?,
-    onClose: () -> Unit,
-    onReply: (String) -> Unit
-) {
-    Log.d("FloatingWindowService", "TikTokLayout composable recomposed. Notification: $notification")
-    if (notification == null) {
-        Log.d("FloatingWindowService", "TikTokLayout: notification is null, returning.")
-        return
-    }
-
-    var replyText by remember { mutableStateOf("") }
-
-    Column(
-        modifier = Modifier
-            .padding(16.dp)
-            .background(MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(text = notification.title ?: "No Title", fontWeight = FontWeight.Bold)
-        Text(text = notification.text ?: "No Text")
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = replyText,
-            onValueChange = { replyText = it },
-            label = { Text("Your reply") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            Button(onClick = {
-                Log.d("FloatingWindowService", "TikTokLayout: Close button clicked.")
-                onClose()
-            }) {
-                Text("Close")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                Log.d("FloatingWindowService", "TikTokLayout: Reply button clicked with text: $replyText")
-                onReply(replyText)
-            }) {
-                Text("Reply")
-            }
-        }
-    }
-}
-
-
 
 class ServiceBackPressedDispatcherOwner(
     override val onBackPressedDispatcher: OnBackPressedDispatcher,
@@ -1104,6 +1250,90 @@ fun NotificationListLayout(
                     color = Color.White,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun ConversationListLayout(
+    conversations: List<Conversation>,
+    onConversationClick: (Conversation) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(0.8f)
+            .background(Color.Black.copy(alpha = 0.7f), shape = MaterialTheme.shapes.medium)
+            .padding(8.dp)
+    ) {
+        Text("Conversations", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        LazyColumn {
+            items(conversations) { conversation ->
+                Column(modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onConversationClick(conversation) }
+                    .padding(vertical = 8.dp)
+                ) {
+                    Text(text = conversation.sender, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = conversation.messages.lastOrNull()?.text ?: "", color = Color.Gray)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ConversationHistoryLayout(
+    conversation: Conversation,
+    onReply: (String) -> Unit,
+    onClose: () -> Unit,
+    onInputFocusChanged: (Boolean) -> Unit
+
+) {
+    var replyText by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(0.8f)
+            .background(Color.Black.copy(alpha = 0.7f), shape = MaterialTheme.shapes.medium)
+            .padding(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = conversation.sender, fontWeight = FontWeight.Bold, color = Color.White)
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(conversation.messages) { message ->
+                Text(
+                    text = message.text,
+                    color = if (message.isFromUser) Color.Green else Color.White,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = replyText,
+                onValueChange = { replyText = it },
+                label = { Text("Your reply") },
+                modifier = Modifier.weight(1f).onFocusChanged { onInputFocusChanged(it.isFocused) }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                onReply(replyText)
+                replyText = ""
+            }) {
+                Text("Reply")
             }
         }
     }

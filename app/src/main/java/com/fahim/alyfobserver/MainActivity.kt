@@ -54,7 +54,8 @@ class MainActivity : ComponentActivity() {
                             val intent = Intent(this, ButtonEditActivity::class.java)
                             startActivity(intent)
                         },
-                        onNotificationListenerClick = { requestNotificationListenerPermission() }
+                        onNotificationListenerClick = { requestNotificationListenerPermission() },
+                        onBatteryOptimizationClick = { requestIgnoreBatteryOptimizations() }
                     )
                 }
             }
@@ -84,6 +85,14 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         startActivity(intent)
     }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            intent.data = Uri.parse("package:$packageName")
+            startActivity(intent)
+        }
+    }
 }
 
 @Composable
@@ -94,12 +103,14 @@ fun Greeting(
     onAccessibilityClick: () -> Unit,
     onShowOverlayClick: () -> Unit,
     onEditButtonsClick: () -> Unit,
-    onNotificationListenerClick: () -> Unit
+    onNotificationListenerClick: () -> Unit,
+    onBatteryOptimizationClick: () -> Unit
 ) {
     val context = LocalContext.current
     val overlayEnabled = CheckOverlayPermission(context)
     val accessibilityEnabled = CheckAccessibilityPermission(context)
     val notificationListenerEnabled = CheckNotificationListenerPermission(context)
+    val batteryOptimizationDisabled = CheckBatteryOptimization(context)
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -127,6 +138,12 @@ fun Greeting(
             colors = ButtonDefaults.buttonColors(containerColor = if (notificationListenerEnabled) Color.Green else Color.Red)
         ) {
             Text("Notification Listener Permission")
+        }
+        Button(
+            onClick = onBatteryOptimizationClick,
+            colors = ButtonDefaults.buttonColors(containerColor = if (batteryOptimizationDisabled) Color.Green else Color.Red)
+        ) {
+            Text("Battery Optimization")
         }
         Button(
             onClick = onShowOverlayClick,
@@ -165,6 +182,15 @@ fun CheckNotificationListenerPermission(context: Context): Boolean {
     return enabledListeners?.contains(componentName.flattenToString()) == true
 }
 
+@Composable
+fun CheckBatteryOptimization(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+    return true
+}
+
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
@@ -175,7 +201,8 @@ fun DefaultPreview() {
             onAccessibilityClick = { },
             onShowOverlayClick = { },
             onEditButtonsClick = { },
-            onNotificationListenerClick = { }
+            onNotificationListenerClick = { },
+            onBatteryOptimizationClick = { }
         )
     }
 }
