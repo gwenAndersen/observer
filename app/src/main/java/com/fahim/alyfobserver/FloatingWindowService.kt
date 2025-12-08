@@ -24,7 +24,9 @@ import androidx.core.app.NotificationCompat
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Surface
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -48,6 +50,7 @@ import androidx.compose.foundation.lazy.items
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
@@ -393,7 +396,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
 
                 setContent {
                     NewAndroidProjectTheme {
-                        MaterialTheme {
                             val rootModifier = Modifier.offset {
                                 IntOffset(
                                     conversationHeadOffsetX.roundToInt(),
@@ -506,7 +508,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     }
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -591,7 +592,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                         )
                     ) {
                         NewAndroidProjectTheme {
-                            MaterialTheme {
                                 OverlayList(
                                     context = this@FloatingWindowService,
                                     isExpanded = isExpanded,
@@ -702,7 +702,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                             )
                                         }
                                 )
-                            }
                         }
                     }
                     Log.d("FloatingWindowService", "showOverlay: setContent COMPLETED")
@@ -1280,23 +1279,43 @@ fun ConversationListLayout(
     conversations: List<Conversation>,
     onConversationClick: (Conversation) -> Unit
 ) {
-    Column(
+    Surface(
         modifier = Modifier
-            .fillMaxWidth(0.8f)
-            .background(Color.Black.copy(alpha = 0.7f), shape = MaterialTheme.shapes.medium)
-            .padding(8.dp)
+            .fillMaxWidth(0.8f),
+        shape = MaterialTheme.shapes.large,
+        shadowElevation = 4.dp
     ) {
-        Text("Conversations", color = Color.White, style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        LazyColumn {
-            items(conversations) { conversation ->
-                Column(modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onConversationClick(conversation) }
-                    .padding(vertical = 8.dp)
-                ) {
-                    Text(text = conversation.sender, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text(text = conversation.messages.lastOrNull()?.text ?: "", color = Color.Gray)
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                "Conversations",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(conversations) { conversation ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onConversationClick(conversation) },
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = conversation.sender,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = conversation.messages.lastOrNull()?.text ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1310,50 +1329,94 @@ fun ConversationHistoryLayout(
     onReply: (String) -> Unit,
     onClose: () -> Unit,
     onInputFocusChanged: (Boolean) -> Unit
-
 ) {
     var replyText by remember { mutableStateOf("") }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth(0.8f)
-            .background(Color.Black.copy(alpha = 0.7f), shape = MaterialTheme.shapes.medium)
-            .padding(8.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth(0.9f),
+        shape = MaterialTheme.shapes.large,
+        shadowElevation = 4.dp,
+        color = MaterialTheme.colorScheme.surface
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(16.dp)
         ) {
-            Text(text = conversation.sender, fontWeight = FontWeight.Bold, color = Color.White)
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(conversation.messages) { message ->
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = message.text,
-                    color = if (message.isFromUser) Color.Green else Color.White,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    text = conversation.sender,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
                 )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
             }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = replyText,
-                onValueChange = { replyText = it },
-                label = { Text("Your reply") },
-                modifier = Modifier.weight(1f).onFocusChanged { onInputFocusChanged(it.isFocused) }
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                onReply(replyText)
-                replyText = ""
-            }) {
-                Text("Reply")
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Chat messages
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                reverseLayout = true
+            ) {
+                items(conversation.messages.asReversed()) { message ->
+                    val bubbleColor = if (message.isFromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+                    val textColor = if (message.isFromUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                    val alignment = if (message.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Surface(
+                            modifier = Modifier.align(alignment),
+                            color = bubbleColor,
+                            shape = MaterialTheme.shapes.medium,
+                            shadowElevation = 1.dp
+                        ) {
+                            Text(
+                                text = message.text,
+                                color = textColor,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Reply section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = replyText,
+                    onValueChange = { replyText = it },
+                    label = { Text("Your reply") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { onInputFocusChanged(it.isFocused) },
+                    shape = MaterialTheme.shapes.large
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (replyText.isNotBlank()) {
+                            onReply(replyText)
+                            replyText = ""
+                        }
+                    },
+                    enabled = replyText.isNotBlank()
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Reply",
+                        tint = if (replyText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
             }
         }
     }
