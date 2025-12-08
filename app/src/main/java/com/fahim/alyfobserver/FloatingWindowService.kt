@@ -373,7 +373,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
@@ -408,30 +408,37 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     modifier = rootModifier
                                         .size(56.dp)
                                         .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                        .clickable {
+                                            Log.d("FloatingWindowService", "Tapped!")
+                                            isConversationHeadExpanded.value = true
+                                        }
                                         .pointerInput(Unit) {
                                             detectDragGestures(
-                                                onDragStart = { isDragging = false },
                                                 onDrag = { change, dragAmount ->
                                                     change.consume()
-                                                    isDragging = true
                                                     conversationHeadOffsetX += dragAmount.x
                                                     conversationHeadOffsetY += dragAmount.y
+                                                    Log.d("FloatingWindowService", "onDrag: dragAmount=$dragAmount")
                                                 },
                                                 onDragEnd = {
-                                                    if (!isDragging) {
-                                                        // This was a TAP
-                                                        isConversationHeadExpanded.value = true
-                                                    } else {
-                                                        // This was a DRAG
-                                                        conversationHeadParams.x += conversationHeadOffsetX.roundToInt()
-                                                        conversationHeadParams.y += conversationHeadOffsetY.roundToInt()
-                                                        conversationHeadOffsetX = 0f
-                                                        conversationHeadOffsetY = 0f
-                                                        windowManager.updateViewLayout(
-                                                            this@apply,
-                                                            conversationHeadParams
-                                                        )
-                                                    }
+                                                    Log.d("FloatingWindowService", "onDragEnd")
+                                                    // This was a DRAG
+                                                    Log.d("FloatingWindowService", "Dragged!")
+                                                    conversationHeadParams.x += conversationHeadOffsetX.roundToInt()
+                                                    conversationHeadParams.y += conversationHeadOffsetY.roundToInt()
+                                                    windowManager.updateViewLayout(
+                                                        this@apply,
+                                                        conversationHeadParams
+                                                    )
+                                                    // Reset offsets for the next gesture
+                                                    conversationHeadOffsetX = 0f
+                                                    conversationHeadOffsetY = 0f
+                                                },
+                                                onDragStart = {
+                                                    // Reset drag offsets at the start of a new gesture
+                                                    conversationHeadOffsetX = 0f
+                                                    conversationHeadOffsetY = 0f
+                                                    Log.d("FloatingWindowService", "onDragStart")
                                                 }
                                             )
                                         }
@@ -604,7 +611,20 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     },
                                     onToggleTextLayout = { showTextLayout.value = !showTextLayout.value; currentLayoutState.value = if (showTextLayout.value) OverlayLayoutState.TEXT_LAYOUT else OverlayLayoutState.MAIN },
                                     onToggleDataLayout = { showDataLayout.value = !showDataLayout.value; currentLayoutState.value = if (showDataLayout.value) OverlayLayoutState.DATA_LAYOUT else OverlayLayoutState.MAIN },
-                                    onToggleWebViewLayout = { showWebViewLayout.value = !showWebViewLayout.value; currentLayoutState.value = if (showWebViewLayout.value) OverlayLayoutState.WEB_VIEW_LAYOUT else OverlayLayoutState.MAIN },
+                                    onToggleWebViewLayout = {
+                                        val isShowing = !showWebViewLayout.value
+                                        showWebViewLayout.value = isShowing
+                                        currentLayoutState.value = if (isShowing) OverlayLayoutState.WEB_VIEW_LAYOUT else OverlayLayoutState.MAIN
+
+                                        if (isShowing) {
+                                            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                                        } else {
+                                            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                        }
+                                        overlayView?.let {
+                                            windowManager.updateViewLayout(it, params)
+                                        }
+                                    },
                                     onToggleHeartLayout = { showHeartLayout.value = !showHeartLayout.value; currentLayoutState.value = if (showHeartLayout.value) OverlayLayoutState.HEART_LAYOUT else OverlayLayoutState.MAIN },
                                     onToggleNotificationListLayout = { showNotificationListLayout.value = !showNotificationListLayout.value; currentLayoutState.value = if (showNotificationListLayout.value) OverlayLayoutState.NOTIFICATION_LIST_LAYOUT else OverlayLayoutState.MAIN },
                                     onPasteText = { text -> pasteText(text) },
