@@ -65,16 +65,21 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LooksOne
 import androidx.compose.material.icons.filled.LooksTwo
 import androidx.compose.material.icons.filled.Looks3
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Web
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
@@ -137,7 +142,8 @@ data class Conversation(
     val sender: String,
     val messages: MutableList<Message>,
     val replyAction: PendingIntent?,
-    val remoteInputBundle: Bundle?
+    val remoteInputBundle: Bundle?,
+    var category: ConversationCategory = ConversationCategory.DEFAULT
 )
 
 data class TikTokNotification(
@@ -162,6 +168,7 @@ class ServiceLifecycleOwner : LifecycleOwner {
 
 class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStateRegistryOwner {
 
+    private lateinit var categoryManager: CategoryManager
     private var webViewInstance: WebView? = null
     private lateinit var windowManager: WindowManager
     private var overlayView: ComposeView? = null
@@ -265,6 +272,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
 
     override fun onCreate() {
         super.onCreate()
+        categoryManager = CategoryManager(this)
         Log.d("FloatingWindowService", "onCreate: Service is being created.")
 
         createNotificationChannel()
@@ -354,7 +362,8 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                         sender = sender,
                         messages = mutableListOf(Message(text ?: "", false)),
                         replyAction = replyAction,
-                        remoteInputBundle = remoteInputBundle
+                        remoteInputBundle = remoteInputBundle,
+                        category = categoryManager.getCategoryForSender(sender)
                     )
                     conversations.add(newConversation)
                 }
@@ -379,9 +388,9 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.TOP or Gravity.START
+                gravity = Gravity.TOP or Gravity.END
                 x = 0
-                y = 200 // Initial position
+                y = 100 // Initial position
             }
 
             conversationHeadView = ComposeView(this).apply {
@@ -406,51 +415,17 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                             if (!isConversationHeadExpanded.value && activeConversationInHead.value == null) {
                                 // --- Collapsed, Draggable Icon ---
                                 var isDragging by remember { mutableStateOf(false) }
-                                Box(
-                                    modifier = rootModifier
-                                        .size(56.dp)
-                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                        .clickable {
-                                            Log.d("FloatingWindowService", "Tapped!")
-                                            isConversationHeadExpanded.value = true
-                                        }
-                                        .pointerInput(Unit) {
-                                            detectDragGestures(
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    conversationHeadOffsetX += dragAmount.x
-                                                    conversationHeadOffsetY += dragAmount.y
-                                                    Log.d("FloatingWindowService", "onDrag: dragAmount=$dragAmount")
-                                                },
-                                                onDragEnd = {
-                                                    Log.d("FloatingWindowService", "onDragEnd")
-                                                    // This was a DRAG
-                                                    Log.d("FloatingWindowService", "Dragged!")
-                                                    conversationHeadParams.x += conversationHeadOffsetX.roundToInt()
-                                                    conversationHeadParams.y += conversationHeadOffsetY.roundToInt()
-                                                    windowManager.updateViewLayout(
-                                                        this@apply,
-                                                        conversationHeadParams
-                                                    )
-                                                    // Reset offsets for the next gesture
-                                                    conversationHeadOffsetX = 0f
-                                                    conversationHeadOffsetY = 0f
-                                                },
-                                                onDragStart = {
-                                                    // Reset drag offsets at the start of a new gesture
-                                                    conversationHeadOffsetX = 0f
-                                                    conversationHeadOffsetY = 0f
-                                                    Log.d("FloatingWindowService", "onDragStart")
-                                                }
-                                            )
-                                        }
-                                )
-                                {
+                                FloatingActionButton(
+                                    onClick = {
+                                        Log.d("FloatingWindowService", "Tapped!")
+                                        isConversationHeadExpanded.value = true
+                                    },
+                                    modifier = rootModifier.size(56.dp),
+                                    shape = CircleShape
+                                ) {
                                     Icon(
-                                        Icons.Default.Send,
-                                        contentDescription = "Show Conversations",
-                                        tint = Color.White,
-                                        modifier = Modifier.align(Alignment.Center)
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Show Conversations"
                                     )
                                 }
                             } else {
@@ -499,7 +474,8 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                                 conversations = conversations,
                                                 onConversationClick = { conversation ->
                                                     activeConversationInHead.value = conversation
-                                                }
+                                                },
+                                                categoryManager = categoryManager
                                             )
                                             Button(onClick = { hideConversationHead() }) {
                                                 Text("Close All")
@@ -1277,44 +1253,86 @@ fun NotificationListLayout(
 @Composable
 fun ConversationListLayout(
     conversations: List<Conversation>,
-    onConversationClick: (Conversation) -> Unit
+    onConversationClick: (Conversation) -> Unit,
+    categoryManager: CategoryManager
 ) {
+    var filterCategory by remember { mutableStateOf<ConversationCategory?>(null) }
+    var rerender by remember { mutableStateOf(false) }
+
+
     Surface(
-        modifier = Modifier
-            .fillMaxWidth(0.8f),
+        modifier = Modifier.fillMaxWidth(0.8f),
         shape = MaterialTheme.shapes.large,
         shadowElevation = 4.dp
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                "Conversations",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(conversations) { conversation ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onConversationClick(conversation) },
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = conversation.sender,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = conversation.messages.lastOrNull()?.text ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Conversations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
+
+            // Filter Buttons
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                TextButton(onClick = { filterCategory = null }) { Text("All") }
+                TextButton(onClick = { filterCategory = ConversationCategory.NEW }) { Text("New") }
+                TextButton(onClick = { filterCategory = ConversationCategory.VIP }) { Text("VIP") }
+                TextButton(onClick = { filterCategory = ConversationCategory.REGULAR }) { Text("Regular") }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (rerender) {
+                // This is a trick to force recomposition
+            }
+            
+            // Content
+            if (filterCategory == null) {
+                // Show full conversation list
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(conversations) { conversation ->
+                        var showMenu by remember { mutableStateOf(false) }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable { onConversationClick(conversation) },
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = conversation.sender, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                        if (conversation.messages.lastOrNull()?.isFromUser == false) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Box(modifier = Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                                        }
+                                    }
+                                    Text(text = conversation.messages.lastOrNull()?.text ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(text = "Category: ${conversation.category}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+
+                                }
+                                Box {
+                                    IconButton(onClick = { showMenu = true }) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                                    }
+                                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                        ConversationCategory.values().forEach { category ->
+                                            DropdownMenuItem(
+                                                text = { Text(category.name) },
+                                                onClick = {
+                                                    conversation.category = category
+                                                    categoryManager.setCategoryForSender(conversation.sender, category)
+                                                    showMenu = false
+                                                    rerender = !rerender
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
+                    }
+                }
+            } else {
+                // Show filtered list of names
+                val filteredConversations = conversations.filter { it.category == filterCategory }
+                LazyColumn {
+                    items(filteredConversations) { conversation ->
+                        Text(text = conversation.sender, modifier = Modifier.padding(vertical = 8.dp))
                     }
                 }
             }
