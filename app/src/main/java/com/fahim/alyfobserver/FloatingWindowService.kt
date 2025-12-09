@@ -224,11 +224,13 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
 
     private val layoutUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == "com.fahim.alyfobserver.LAYOUT_UPDATED") {
+            if (intent?.action == ButtonEditActivity.ACTION_BUTTON_LAYOUT_UPDATED) {
                 Log.d("FloatingWindowService", "Received layout update broadcast")
                 lifecycleScope.launch {
                     clipboardButtonLayout = DataStoreManager.loadButtonLayout(this@FloatingWindowService)
                     heartButtonLayout = DataStoreManager.loadHeartButtonLayout(this@FloatingWindowService)
+                    // You might need to force a recomposition of the overlay here
+                    // if it's already showing.
                 }
             }
         }
@@ -314,7 +316,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         Log.d("FloatingWindowService", "onCreate: Registering broadcast receiver.")
         registerReceiver(broadcastReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
 
-        val layoutUpdateFilter = IntentFilter("com.fahim.alyfobserver.LAYOUT_UPDATED")
+        val layoutUpdateFilter = IntentFilter(ButtonEditActivity.ACTION_BUTTON_LAYOUT_UPDATED)
         registerReceiver(layoutUpdateReceiver, layoutUpdateFilter, RECEIVER_NOT_EXPORTED)
 
         val tikTokFilter = IntentFilter(TikTokNotificationListener.ACTION_TIKTOK_NOTIFICATION)
