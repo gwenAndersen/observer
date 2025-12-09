@@ -131,6 +131,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.IntOffset
 import android.app.PendingIntent
 import android.app.RemoteInput
+import android.provider.Settings
+import android.content.ComponentName
 
 
 data class Message(
@@ -272,6 +274,16 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         }
     }
 
+    private val accessibilityCheckHandler = Handler(Looper.getMainLooper())
+    private val accessibilityCheckRunnable = object : Runnable {
+        override fun run() {
+            if (!isAccessibilityServiceEnabled()) {
+                sendAccessibilityDisabledNotification()
+            }
+            accessibilityCheckHandler.postDelayed(this, 10000) // Check every 10 seconds
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         categoryManager = CategoryManager(this)
@@ -326,6 +338,8 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         val generalNotificationFilter = IntentFilter(TikTokNotificationListener.ACTION_GENERAL_NOTIFICATION)
         registerReceiver(generalNotificationReceiver, generalNotificationFilter, RECEIVER_NOT_EXPORTED)
         Log.d("FloatingWindowService", "generalNotificationReceiver registered for action: ${TikTokNotificationListener.ACTION_GENERAL_NOTIFICATION}")
+
+        accessibilityCheckHandler.post(accessibilityCheckRunnable)
     }
 
     private val generalNotificationReceiver = object : BroadcastReceiver() {
@@ -470,29 +484,29 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                             }
                                         )
                                     } else {
-                                        // Show Conversation List
-                                        Column {
-                                            ConversationListLayout(
-                                                conversations = conversations,
-                                                onConversationClick = { conversation ->
-                                                    activeConversationInHead.value = conversation
-                                                },
-                                                categoryManager = categoryManager
-                                            )
-                                            Button(onClick = { hideConversationHead() }) {
-                                                Text("Close All")
+                                                                                 // Show Conversation List
+                                                                                Column(modifier = Modifier.height(500.dp)) {
+                                                                                    ConversationListLayout(
+                                                                                        modifier = Modifier.weight(1f),
+                                                                                        conversations = conversations,
+                                                                                        onConversationClick = { conversation ->
+                                                                                            activeConversationInHead.value = conversation
+                                                                                        },
+                                                                                        categoryManager = categoryManager
+                                                                                    )
+                                                                                    Button(onClick = { hideConversationHead() }) {
+                                                                                        Text("Close All")
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                            }
+                                                        }
+                                                    }
+                                                    windowManager.addView(conversationHeadView, conversationHeadParams)
+                                                }
                                             }
-                                        }
-                                    }
-                                }
-                            }
-                    }
-                }
-            }
-            windowManager.addView(conversationHeadView, conversationHeadParams)
-        }
-    }
-
     private fun hideConversationHead() {
         conversationHeadView?.let { view ->
             windowManager.removeView(view)
@@ -531,6 +545,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     unregisterReceiver(layoutUpdateReceiver)
     unregisterReceiver(tikTokNotificationReceiver)
     unregisterReceiver(generalNotificationReceiver)
+    accessibilityCheckHandler.removeCallbacks(accessibilityCheckRunnable)
     hideOverlay()
     _viewModelStore.clear()
 }
@@ -745,6 +760,27 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         manager.createNotificationChannel(serviceChannel)
     }
 }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val service = ComponentName(this, MyAccessibilityService::class.java)
+        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        return enabledServices?.contains(service.flattenToString()) == true
+    }
+
+    private fun sendAccessibilityDisabledNotification() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        val notification = NotificationCompat.Builder(this, "floating_window_service_channel")
+            .setContentTitle("Accessibility Service Disabled")
+            .setContentText("Tap to re-enable the Alyf Observer accessibility service.")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(2, notification)
+    }
 }
 
 @Composable
@@ -1254,6 +1290,7 @@ fun NotificationListLayout(
 
 @Composable
 fun ConversationListLayout(
+    modifier: Modifier = Modifier,
     conversations: List<Conversation>,
     onConversationClick: (Conversation) -> Unit,
     categoryManager: CategoryManager
@@ -1263,7 +1300,7 @@ fun ConversationListLayout(
 
 
     Surface(
-        modifier = Modifier.fillMaxWidth(0.8f),
+        modifier = modifier.fillMaxWidth(0.8f),
         shape = MaterialTheme.shapes.large,
         shadowElevation = 4.dp
     ) {

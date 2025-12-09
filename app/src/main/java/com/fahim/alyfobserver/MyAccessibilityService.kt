@@ -49,6 +49,10 @@ class MyAccessibilityService : AccessibilityService() {
         }
         registerReceiver(broadcastReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
         Log.d("MyAccessibilityService", "Accessibility service connected and broadcast receiver registered.")
+
+        // Start the foreground service to make the accessibility service more resilient
+        val serviceIntent = Intent(this, FloatingWindowService::class.java)
+        startService(serviceIntent)
     }
 
     override fun onDestroy() {
