@@ -107,6 +107,7 @@ fun ButtonEditor() {
                     }
                     // Notify the service that the layout has been updated
                     val intent = Intent(ButtonEditActivity.ACTION_BUTTON_LAYOUT_UPDATED)
+                    intent.setPackage(context.packageName)
                     context.sendBroadcast(intent)
                 }
             }) {

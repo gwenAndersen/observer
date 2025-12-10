@@ -65,7 +65,10 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LooksOne
 import androidx.compose.material.icons.filled.LooksTwo
 import androidx.compose.material.icons.filled.Looks3
+import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -119,6 +122,8 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.fahim.alyfobserver.ui.theme.NewAndroidProjectTheme
+import com.google.accompanist.web.WebViewNavigator
+import com.google.accompanist.web.rememberWebViewNavigator
 import com.google.accompanist.web.rememberWebViewState
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -133,6 +138,8 @@ import android.app.PendingIntent
 import android.app.RemoteInput
 import android.provider.Settings
 import android.content.ComponentName
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 
 
 data class Message(
@@ -142,10 +149,10 @@ data class Message(
 
 data class Conversation(
     val sender: String,
-    val messages: MutableList<Message>,
+    val messages: List<Message>,
     val replyAction: PendingIntent?,
     val remoteInputBundle: Bundle?,
-    var category: ConversationCategory = ConversationCategory.DEFAULT
+    val category: ConversationCategory = ConversationCategory.DEFAULT
 )
 
 data class TikTokNotification(
@@ -176,8 +183,6 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
     private var overlayView: ComposeView? = null
     private lateinit var params: WindowManager.LayoutParams
     private var isExpanded = mutableStateOf(false)
-    private var offsetX by mutableStateOf(0f)
-    private var offsetY by mutableStateOf(0f)
     private var showTextLayout = mutableStateOf(false)
     private var showDataLayout = mutableStateOf(false)
     private var showWebViewLayout = mutableStateOf(false)
@@ -242,13 +247,24 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         val rect = Rect()
         overlayView?.getWindowVisibleDisplayFrame(rect)
 
-        val fullscreenNow = rect.top == 0
+        val rootView = overlayView?.rootView
+        val screenWidth = rootView?.width ?: 0
+        val screenHeight = rootView?.height ?: 0
+
+        val statusBarHeight = 0 
+
+        val isStatusBarVisible = rect.top > statusBarHeight
+        val isNavigationBarVisible = rect.bottom < screenHeight
+
+        val fullscreenNow = !isStatusBarVisible || !isNavigationBarVisible
         if (fullscreenNow != isFullScreen) {
             isFullScreen = fullscreenNow
             if (isFullScreen) {
                 hideOverlay()
             } else {
-                showOverlay()
+                val intent = Intent(MyAccessibilityService.ACTION_SHOW_OVERLAY)
+                intent.setPackage(packageName)
+                sendBroadcast(intent)
             }
         }
 
@@ -372,11 +388,16 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                 val conversation = conversations.find { it.sender == sender }
 
                 if (conversation != null) {
-                    conversation.messages.add(Message(text ?: "", false))
+                    val index = conversations.indexOf(conversation)
+                    if (index != -1) {
+                        val updatedMessages = conversation.messages.toMutableList()
+                        updatedMessages.add(Message(text ?: "", false))
+                        conversations[index] = conversation.copy(messages = updatedMessages)
+                    }
                 } else {
                     val newConversation = Conversation(
                         sender = sender,
-                        messages = mutableListOf(Message(text ?: "", false)),
+                        messages = listOf(Message(text ?: "", false)),
                         replyAction = replyAction,
                         remoteInputBundle = remoteInputBundle,
                         category = categoryManager.getCategoryForSender(sender)
@@ -465,7 +486,14 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                                             RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
                                                             try {
                                                                 replyAction.send(this@FloatingWindowService, 0, replyIntent)
-                                                                conversation.messages.add(Message(replyText, true))
+                                                                val index = conversations.indexOf(conversation)
+                                                                if (index != -1) {
+                                                                    val updatedMessages = conversation.messages.toMutableList()
+                                                                    updatedMessages.add(Message(replyText, true))
+                                                                    val updatedConversation = conversation.copy(messages = updatedMessages)
+                                                                    conversations[index] = updatedConversation
+                                                                    activeConversationInHead.value = updatedConversation
+                                                                }
                                                             } catch (e: PendingIntent.CanceledException) {
                                                                 Log.e("FloatingWindowService", "Could not send reply", e)
                                                             }
@@ -492,7 +520,14 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                                                                         onConversationClick = { conversation ->
                                                                                             activeConversationInHead.value = conversation
                                                                                         },
-                                                                                        categoryManager = categoryManager
+                                                                                        categoryManager = categoryManager,
+                                                                                        onConversationCategoryChanged = { conversation, category ->
+                                                                                            val index = conversations.indexOf(conversation)
+                                                                                            if (index != -1) {
+                                                                                                conversations[index] = conversation.copy(category = category)
+                                                                                                categoryManager.setCategoryForSender(conversation.sender, category)
+                                                                                            }
+                                                                                        }
                                                                                     )
                                                                                     Button(onClick = { hideConversationHead() }) {
                                                                                         Text("Close All")
@@ -667,7 +702,14 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                                 RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
                                                 try {
                                                     replyAction.send(this@FloatingWindowService, 0, replyIntent)
-                                                    conversation.messages.add(Message(replyText, true))
+                                                    val index = conversations.indexOf(conversation)
+                                                    if (index != -1) {
+                                                        val updatedMessages = conversation.messages.toMutableList()
+                                                        updatedMessages.add(Message(replyText, true))
+                                                        val updatedConversation = conversation.copy(messages = updatedMessages)
+                                                        conversations[index] = updatedConversation
+                                                        activeConversation.value = updatedConversation
+                                                    }
                                                 } catch (e: PendingIntent.CanceledException) {
                                                     Log.e("FloatingWindowService", "Could not send reply", e)
                                                 }
@@ -676,23 +718,13 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     }
                                     },
                                     modifier = Modifier
-                                        .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
                                         .pointerInput(Unit) {
-                                            detectDragGestures(
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    offsetX += dragAmount.x
-                                                    offsetY += dragAmount.y
-                                                },
-                                                onDragEnd = {
-                                                    params.x += offsetX.roundToInt()
-                                                    params.y += offsetY.roundToInt()
-                                                    offsetX = 0f
-                                                    offsetY = 0f
-                                                    lastYPosition = params.y
-                                                    windowManager.updateViewLayout(this@apply, params)
-                                                }
-                                            )
+                                            detectDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                params.x += dragAmount.x.roundToInt()
+                                                params.y += dragAmount.y.roundToInt()
+                                                windowManager.updateViewLayout(this@apply, params)
+                                            }
                                         }
                                 )
                         }
@@ -968,11 +1000,19 @@ fun WebViewLayout(
     val minimizedSize = (minOf(screenWidth, screenHeight) * 0.03f)
 
     if (isMinimized) {
-        FloatingActionButton(
-            onClick = { onIsMinimizedChange(false) },
-            modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2)
+        val targetHitboxHeight = minimizedSize * 4
+        Box(
+            modifier = Modifier
+                .size(width = minimizedSize, height = targetHitboxHeight) // Set the size of the clickable area
+                .clickable { onIsMinimizedChange(false) }, // Make the entire Box clickable
+            contentAlignment = Alignment.Center // Center the FAB within the larger hitbox
         ) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
+            FloatingActionButton(
+                onClick = { onIsMinimizedChange(false) }, // Still handle click for direct FAB interaction
+                modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2) // Visual size of the FAB
+            ) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
+            }
         }
     } else {
         Column(
@@ -980,6 +1020,8 @@ fun WebViewLayout(
                 .padding(16.dp)
                 .alpha(alpha)
         ) {
+            val webViewState = rememberWebViewState(url = "http://localhost:5000/")
+            val navigator = rememberWebViewNavigator()
             Row {
                 FloatingActionButton(
                     onClick = { onIsMinimizedChange(true) },
@@ -994,12 +1036,70 @@ fun WebViewLayout(
                 ) {
                     Icon(Icons.Filled.Code, contentDescription = "Launch Termux")
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                FloatingActionButton(
+                    onClick = {
+                        webViewState.lastLoadedUrl?.let { url ->
+                            if (url.isNotBlank()) {
+                                try {
+                                    val customTabsIntent = CustomTabsIntent.Builder().build()
+                                    customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    customTabsIntent.launchUrl(context, Uri.parse(url))
+                                } catch (e: Exception) {
+                                    Log.e("FloatingWindowService", "Could not launch Custom Tab", e)
+                                    Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(size / 2)
+                ) {
+                    Icon(Icons.Default.OpenInNew, contentDescription = "Open in Browser")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                FloatingActionButton(
+                    onClick = {
+                        val url = "https://socialpanel.pro/"
+                        if (url.isNotBlank()) {
+                            try {
+                                val customTabsIntent = CustomTabsIntent.Builder().build()
+                                customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                customTabsIntent.launchUrl(context, Uri.parse(url))
+                            } catch (e: Exception) {
+                                Log.e("FloatingWindowService", "Could not launch Custom Tab", e)
+                                Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(size / 2)
+                ) {
+                    Icon(Icons.Default.Public, contentDescription = "Open Social Panel")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                FloatingActionButton(
+                    onClick = {
+                        val url = "https://messages.google.com/web/conversations"
+                        if (url.isNotBlank()) {
+                            try {
+                                val customTabsIntent = CustomTabsIntent.Builder().build()
+                                customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                customTabsIntent.launchUrl(context, Uri.parse(url))
+                            } catch (e: Exception) {
+                                Log.e("FloatingWindowService", "Could not launch Custom Tab", e)
+                                Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(size / 2)
+                ) {
+                    Icon(Icons.Default.Message, contentDescription = "Open Google Messages")
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
 
-            val webViewState = rememberWebViewState(url = "http://localhost:5000/")
             WebView(
                 state = webViewState,
+                navigator = navigator,
                 modifier = Modifier.fillMaxWidth(0.95f).height(400.dp),
                 onCreated = { webView ->
                     onWebViewCreated(webView)
@@ -1036,12 +1136,19 @@ fun TextLayout(
     val minimizedSize = (minOf(screenWidth, screenHeight) * 0.03f)
 
     if (isMinimized) {
-        FloatingActionButton(
-            onClick = { onIsMinimizedChange(false) }, // Restore on click
+        val targetHitboxHeight = minimizedSize * 4
+        Box(
             modifier = Modifier
-                .size(width = minimizedSize, height = minimizedSize * 2)
+                .size(width = minimizedSize, height = targetHitboxHeight) // Set the size of the clickable area
+                .clickable { onIsMinimizedChange(false) }, // Make the entire Box clickable
+            contentAlignment = Alignment.Center // Center the FAB within the larger hitbox
         ) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
+            FloatingActionButton(
+                onClick = { onIsMinimizedChange(false) }, // Still handle click for direct FAB interaction
+                modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2) // Visual size of the FAB
+            ) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
+            }
         }
     } else {
         Column(
@@ -1293,10 +1400,10 @@ fun ConversationListLayout(
     modifier: Modifier = Modifier,
     conversations: List<Conversation>,
     onConversationClick: (Conversation) -> Unit,
-    categoryManager: CategoryManager
+    categoryManager: CategoryManager,
+    onConversationCategoryChanged: (Conversation, ConversationCategory) -> Unit
 ) {
     var filterCategory by remember { mutableStateOf<ConversationCategory?>(null) }
-    var rerender by remember { mutableStateOf(false) }
 
 
     Surface(
@@ -1317,9 +1424,6 @@ fun ConversationListLayout(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (rerender) {
-                // This is a trick to force recomposition
-            }
             
             // Content
             if (filterCategory == null) {
@@ -1353,10 +1457,8 @@ fun ConversationListLayout(
                                             DropdownMenuItem(
                                                 text = { Text(category.name) },
                                                 onClick = {
-                                                    conversation.category = category
-                                                    categoryManager.setCategoryForSender(conversation.sender, category)
+                                                    onConversationCategoryChanged(conversation, category)
                                                     showMenu = false
-                                                    rerender = !rerender
                                                 }
                                             )
                                         }

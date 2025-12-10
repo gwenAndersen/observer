@@ -77,4 +77,6 @@ dependencies {
     implementation "dev.rikka.shizuku:api:$shizuku_version"
     implementation "dev.rikka.shizuku:provider:$shizuku_version"
     implementation "com.google.accompanist:accompanist-webview:0.34.0"
+    implementation "androidx.browser:browser:1.8.0"
+    implementation "androidx.browser:browser:1.8.0"
 }
