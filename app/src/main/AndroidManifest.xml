@@ -74,6 +74,14 @@
             </intent-filter>
         </service>
 
+        <receiver
+            android:name=".OverlayTriggerReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.fahim.alyfobserver.ACTION_TRIGGER_OVERLAY" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
     <queries>

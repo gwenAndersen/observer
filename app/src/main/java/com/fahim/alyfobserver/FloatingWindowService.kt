@@ -412,7 +412,10 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        Log.d("FloatingWindowService", "onStartCommand: Service is started.\n")
+        Log.d("FloatingWindowService", "onStartCommand: Service is started with action: ${intent?.action}")
+        if (intent?.action == "com.fahim.alyfobserver.ACTION_TRIGGER_OVERLAY") {
+            showOverlay()
+        }
         return START_STICKY
     }
 
