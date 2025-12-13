@@ -140,6 +140,10 @@ import android.provider.Settings
 import android.content.ComponentName
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import kotlin.random.Random
 
 
 data class Message(
@@ -1003,6 +1007,7 @@ fun WebViewLayout(
     val minimizedSize = (minOf(screenWidth, screenHeight) * 0.03f)
 
     if (isMinimized) {
+        val randomImage = if (Random.nextBoolean()) R.drawable.ek else R.drawable.ep
         val targetHitboxHeight = minimizedSize * 4
         Box(
             modifier = Modifier
@@ -1010,12 +1015,12 @@ fun WebViewLayout(
                 .clickable { onIsMinimizedChange(false) }, // Make the entire Box clickable
             contentAlignment = Alignment.Center // Center the FAB within the larger hitbox
         ) {
-            FloatingActionButton(
-                onClick = { onIsMinimizedChange(false) }, // Still handle click for direct FAB interaction
-                modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2) // Visual size of the FAB
-            ) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
-            }
+            Image(
+                painter = painterResource(id = randomImage),
+                contentDescription = "Minimized",
+                modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2),
+                contentScale = ContentScale.Fit
+            )
         }
     } else {
         Column(
@@ -1139,6 +1144,7 @@ fun TextLayout(
     val minimizedSize = (minOf(screenWidth, screenHeight) * 0.03f)
 
     if (isMinimized) {
+        val randomImage = if (Random.nextBoolean()) R.drawable.ek else R.drawable.ep
         val targetHitboxHeight = minimizedSize * 4
         Box(
             modifier = Modifier
@@ -1146,12 +1152,12 @@ fun TextLayout(
                 .clickable { onIsMinimizedChange(false) }, // Make the entire Box clickable
             contentAlignment = Alignment.Center // Center the FAB within the larger hitbox
         ) {
-            FloatingActionButton(
-                onClick = { onIsMinimizedChange(false) }, // Still handle click for direct FAB interaction
-                modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2) // Visual size of the FAB
-            ) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Minimized")
-            }
+            Image(
+                painter = painterResource(id = randomImage),
+                contentDescription = "Minimized",
+                modifier = Modifier.size(width = minimizedSize, height = minimizedSize * 2),
+                contentScale = ContentScale.Fit
+            )
         }
     } else {
         Column(
