@@ -423,6 +423,16 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         return START_STICKY
     }
 
+    private fun switchToChatHead() {
+        hideOverlay()
+        showConversationHead()
+    }
+
+    private fun switchToMainOverlay() {
+        hideConversationHead()
+        showOverlay()
+    }
+
     private fun showConversationHead() {
         if (conversationHeadView == null) {
             conversationHeadParams = WindowManager.LayoutParams(
@@ -476,49 +486,54 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                 // --- Expanded, Non-Draggable View ---
                                 Box(modifier = rootModifier) {
                                     if (activeConversationInHead.value != null) {
-                                        // Show Chat History
-                                        ConversationHistoryLayout(
-                                            conversation = activeConversationInHead.value!!,
-                                            onReply = { replyText ->
-                                                activeConversationInHead.value?.let { conversation ->
-                                                    val remoteInputBundle = conversation.remoteInputBundle
-                                                    val replyAction = conversation.replyAction
-                                                    if (remoteInputBundle != null && replyAction != null) {
-                                                        val resultKey = remoteInputBundle.getString("resultKey")
-                                                        if (resultKey != null) {
-                                                            val remoteInput = RemoteInput.Builder(resultKey).setLabel(remoteInputBundle.getCharSequence("label")).build()
-                                                            val resultBundle = Bundle()
-                                                            resultBundle.putCharSequence(remoteInput.resultKey, replyText)
-                                                            val replyIntent = Intent()
-                                                            RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
-                                                            try {
-                                                                replyAction.send(this@FloatingWindowService, 0, replyIntent)
-                                                                val index = conversations.indexOf(conversation)
-                                                                if (index != -1) {
-                                                                    val updatedMessages = conversation.messages.toMutableList()
-                                                                    updatedMessages.add(Message(replyText, true))
-                                                                    val updatedConversation = conversation.copy(messages = updatedMessages)
-                                                                    conversations[index] = updatedConversation
-                                                                    activeConversationInHead.value = updatedConversation
-                                                                }
-                                                            } catch (e: PendingIntent.CanceledException) {
-                                                                Log.e("FloatingWindowService", "Could not send reply", e)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            onClose = { activeConversationInHead.value = null },
-                                            onInputFocusChanged = { isFocused ->
-                                                if (isFocused) {
-                                                    conversationHeadParams.flags = conversationHeadParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-                                                } else {
-                                                    conversationHeadParams.flags = conversationHeadParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                                                }
-                                                windowManager.updateViewLayout(this@apply, conversationHeadParams)
-                                            }
-                                        )
-                                    } else {
+                                                                                 // Show Chat History
+                                                                                Column {
+                                                                                    ConversationHistoryLayout(
+                                                                                        conversation = activeConversationInHead.value!!,
+                                                                                        onReply = { replyText ->
+                                                                                            activeConversationInHead.value?.let { conversation ->
+                                                                                                val remoteInputBundle = conversation.remoteInputBundle
+                                                                                                val replyAction = conversation.replyAction
+                                                                                                if (remoteInputBundle != null && replyAction != null) {
+                                                                                                    val resultKey = remoteInputBundle.getString("resultKey")
+                                                                                                    if (resultKey != null) {
+                                                                                                        val remoteInput = RemoteInput.Builder(resultKey).setLabel(remoteInputBundle.getCharSequence("label")).build()
+                                                                                                        val resultBundle = Bundle()
+                                                                                                        resultBundle.putCharSequence(remoteInput.resultKey, replyText)
+                                                                                                        val replyIntent = Intent()
+                                                                                                        RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, resultBundle)
+                                                                                                        try {
+                                                                                                            replyAction.send(this@FloatingWindowService, 0, replyIntent)
+                                                                                                            val index = conversations.indexOf(conversation)
+                                                                                                            if (index != -1) {
+                                                                                                                val updatedMessages = conversation.messages.toMutableList()
+                                                                                                                updatedMessages.add(Message(replyText, true))
+                                                                                                                val updatedConversation = conversation.copy(messages = updatedMessages)
+                                                                                                                conversations[index] = updatedConversation
+                                                                                                                activeConversationInHead.value = updatedConversation
+                                                                                                            }
+                                                                                                        } catch (e: PendingIntent.CanceledException) {
+                                                                                                            Log.e("FloatingWindowService", "Could not send reply", e)
+                                                                                                        }
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                        },
+                                                                                        onClose = { activeConversationInHead.value = null },
+                                                                                        onInputFocusChanged = { isFocused ->
+                                                                                            if (isFocused) {
+                                                                                                conversationHeadParams.flags = conversationHeadParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                                                                                            } else {
+                                                                                                conversationHeadParams.flags = conversationHeadParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                                                                            }
+                                                                                            windowManager.updateViewLayout(this@apply, conversationHeadParams)
+                                                                                        }
+                                                                                    )
+                                                                                    Spacer(Modifier.height(8.dp))
+                                                                                    Button(onClick = { switchToMainOverlay() }) {
+                                                                                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch to Main Overlay")
+                                                                                    }
+                                                                                }                                    } else {
                                                                                  // Show Conversation List
                                                                                 Column(modifier = Modifier.height(500.dp)) {
                                                                                     ConversationListLayout(
@@ -536,8 +551,14 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                                                                             }
                                                                                         }
                                                                                     )
-                                                                                    Button(onClick = { hideConversationHead() }) {
-                                                                                        Text("Close All")
+                                                                                    Row {
+                                                                                        Button(onClick = { hideConversationHead() }) {
+                                                                                            Text("Close All")
+                                                                                        }
+                                                                                        Spacer(Modifier.width(8.dp))
+                                                                                        Button(onClick = { switchToMainOverlay() }) {
+                                                                                            Icon(Icons.Default.SwapHoriz, contentDescription = "Switch to Main Overlay")
+                                                                                        }
                                                                                     }
                                                                                 }
                                                                             }
@@ -664,6 +685,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                     onToggleNotificationListLayout = { showNotificationListLayout.value = !showNotificationListLayout.value; currentLayoutState.value = if (showNotificationListLayout.value) OverlayLayoutState.NOTIFICATION_LIST_LAYOUT else OverlayLayoutState.MAIN },
                                     onPasteText = { text -> pasteText(text) },
                                     onLaunchTermux = { launchApp("com.termux") },
+                                    onSwitchToChatHead = { switchToChatHead() },
                                     currentLayoutState = currentLayoutState,
                                     onRestoreLayout = { state ->
                                         isMinimized.value = false
@@ -843,6 +865,7 @@ fun OverlayList(
     onToggleNotificationListLayout: () -> Unit,
     onPasteText: (String) -> Unit,
     onLaunchTermux: () -> Unit,
+    onSwitchToChatHead: () -> Unit,
     currentLayoutState: MutableState<OverlayLayoutState>,
     onRestoreLayout: (OverlayLayoutState) -> Unit,
     onSaveDataFromWebView: (String) -> Unit,
@@ -969,6 +992,13 @@ fun OverlayList(
                         modifier = Modifier.size(size)
                     ) {
                         Icon(Icons.Default.Send, contentDescription = "Show Notification List")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    FloatingActionButton(
+                        onClick = onSwitchToChatHead,
+                        modifier = Modifier.size(size)
+                    ) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch to Chat Head")
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
