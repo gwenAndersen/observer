@@ -23,7 +23,11 @@ class ChatViewModel : ViewModel() {
     private val geminiApiKey = BuildConfig.GEMINI_API_KEY
 
     init {
-        messages.add(Message("Hello! How can I help you today?", false))
+        // Add a demo conversation
+        messages.add(Message("Hello! I'm the Observer AI. I can help you analyze conversations. What's on your mind?", false))
+        messages.add(Message("I had a weird conversation with a friend. I'm not sure how to feel about it.", true))
+        messages.add(Message("I can help with that. Can you paste the conversation here or describe the key points?", false))
+        messages.add(Message("They said 'I'm fine' but their tone felt off. They seemed really distant.", true))
     }
 
     fun sendMessage(text: String) {

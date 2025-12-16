@@ -1600,6 +1600,12 @@ fun ConversationHistoryLayout(
                     shape = MaterialTheme.shapes.large
                 )
                 Spacer(modifier = Modifier.width(8.dp))
+                IconButton(onClick = { /* TODO: AI implementation */ }) {
+                    Icon(
+                        Icons.Default.Star,
+                        contentDescription = "Generate AI Reply"
+                    )
+                }
                 IconButton(
                     onClick = {
                         if (replyText.isNotBlank()) {
