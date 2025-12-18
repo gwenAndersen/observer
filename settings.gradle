@@ -19,5 +19,3 @@ dependencyResolutionManagement {
 
 include ':app'
 
-gradle.startParameter.excludedTaskNames.add('testDebugUnitTest')
-gradle.startParameter.excludedTaskNames.add('testReleaseUnitTest')

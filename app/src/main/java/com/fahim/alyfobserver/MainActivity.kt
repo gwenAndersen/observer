@@ -156,6 +156,15 @@ fun Greeting(
         ) {
             Text("Edit Buttons")
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+            onClick = {
+                val intent = Intent(context, com.fahim.alyfobserver.ai.AiChatActivity::class.java)
+                context.startActivity(intent)
+            }
+        ) {
+            Text("Open AI Chat")
+        }
     }
 }
 

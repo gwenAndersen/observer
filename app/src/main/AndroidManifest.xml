@@ -49,6 +49,8 @@
 
         <activity android:name=".ButtonEditActivity" android:exported="false" />
 
+        <activity android:name=".ai.AiChatActivity" android:exported="false" />
+
         
 
         
