@@ -130,6 +130,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 import kotlin.math.roundToInt
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fahim.alyfobserver.ai.AiChatViewModel
 import com.google.accompanist.web.WebView
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
@@ -360,6 +363,23 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
         Log.d("FloatingWindowService", "generalNotificationReceiver registered for action: ${TikTokNotificationListener.ACTION_GENERAL_NOTIFICATION}")
 
         accessibilityCheckHandler.post(accessibilityCheckRunnable)
+
+        // Add a demo conversation for display
+        val demoMessages = listOf(
+            Message("Hello! I'm the Observer AI. I can help you analyze conversations. What's on your mind?", false),
+            Message("I had a weird conversation with a friend. I'm not sure how to feel about it.", true),
+            Message("I can help with that. Can you paste the conversation here or describe the key points?", false),
+            Message("They said 'I'm fine' but their tone felt off. They seemed really distant.", true)
+        )
+        conversations.add(
+            Conversation(
+                sender = "Demo Conversation",
+                messages = demoMessages,
+                replyAction = null,
+                remoteInputBundle = null,
+                category = ConversationCategory.NEW
+            )
+        )
     }
 
     private val generalNotificationReceiver = object : BroadcastReceiver() {
@@ -459,12 +479,14 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
 
                 setContent {
                     NewAndroidProjectTheme {
+                            val aiChatViewModel: AiChatViewModel = viewModel()
                             val rootModifier = Modifier.offset {
                                 IntOffset(
                                     conversationHeadOffsetX.roundToInt(),
                                     conversationHeadOffsetY.roundToInt()
                                 )
                             }
+
 
                             if (!isConversationHeadExpanded.value && activeConversationInHead.value == null) {
                                 // --- Collapsed, Draggable Icon ---
@@ -490,6 +512,7 @@ class FloatingWindowService : LifecycleService(), ViewModelStoreOwner, SavedStat
                                                                                 Column {
                                                                                     ConversationHistoryLayout(
                                                                                         conversation = activeConversationInHead.value!!,
+                                                                                        aiChatViewModel = aiChatViewModel,
                                                                                         onReply = { replyText ->
                                                                                             activeConversationInHead.value?.let { conversation ->
                                                                                                 val remoteInputBundle = conversation.remoteInputBundle
@@ -1524,6 +1547,7 @@ fun ConversationListLayout(
 @Composable
 fun ConversationHistoryLayout(
     conversation: Conversation,
+    aiChatViewModel: AiChatViewModel,
     onReply: (String) -> Unit,
     onClose: () -> Unit,
     onInputFocusChanged: (Boolean) -> Unit
@@ -1590,6 +1614,7 @@ fun ConversationHistoryLayout(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val scope = rememberCoroutineScope()
                 OutlinedTextField(
                     value = replyText,
                     onValueChange = { replyText = it },
@@ -1600,7 +1625,12 @@ fun ConversationHistoryLayout(
                     shape = MaterialTheme.shapes.large
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = { /* TODO: AI implementation */ }) {
+                IconButton(onClick = {
+                    scope.launch {
+                        val aiResponse = aiChatViewModel.generateReplyFromConversation(conversation.messages)
+                        replyText = aiResponse
+                    }
+                }) {
                     Icon(
                         Icons.Default.Star,
                         contentDescription = "Generate AI Reply"

@@ -33,7 +33,7 @@ android {
             buildConfigField "String", "GEMINI_API_KEY", "\"\"" 
         }
         debug {
-            buildConfigField "String", "GEMINI_API_KEY", "\"AIzaSyD63YFW3MAf_pRoIgtKh3iP4m7Pfuxzyeg\""
+            buildConfigField "String", "GEMINI_API_KEY", "\"AIzaSyAJdjSTtIjXNU8_H4v74CSAIogby1F9U4k\""
         }
     }
     compileOptions {

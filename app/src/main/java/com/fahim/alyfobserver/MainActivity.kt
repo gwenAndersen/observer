@@ -24,9 +24,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.fahim.alyfobserver.ui.theme.NewAndroidProjectTheme
-import androidx.compose.foundation.layout.Spacer // Added import
-import androidx.compose.foundation.layout.height // Added import
-import androidx.compose.ui.unit.dp // Added import
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fahim.alyfobserver.ai.AiChatViewModel
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.fillMaxWidth
 
 
 class MainActivity : ComponentActivity() {
@@ -40,9 +51,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             NewAndroidProjectTheme {
+                val aiChatViewModel: AiChatViewModel = viewModel()
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Greeting(
                         "This is the main activity.",
+                        aiChatViewModel = aiChatViewModel,
                         onOverlayClick = { requestOverlayPermission() },
                         onAccessibilityClick = { requestAccessibilityPermission() },
                         onShowOverlayClick = {
@@ -99,6 +112,7 @@ class MainActivity : ComponentActivity() {
 fun Greeting(
     name: String,
     modifier: Modifier = Modifier,
+    aiChatViewModel: AiChatViewModel,
     onOverlayClick: () -> Unit,
     onAccessibilityClick: () -> Unit,
     onShowOverlayClick: () -> Unit,
@@ -111,9 +125,14 @@ fun Greeting(
     val accessibilityEnabled = CheckAccessibilityPermission(context)
     val notificationListenerEnabled = CheckNotificationListenerPermission(context)
     val batteryOptimizationDisabled = CheckBatteryOptimization(context)
+    val testLog by aiChatViewModel.testLogOutput.collectAsState()
+
 
     Column(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 16.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -165,8 +184,25 @@ fun Greeting(
         ) {
             Text("Open AI Chat")
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { aiChatViewModel.runTestAiCall() }) {
+            Text("Test AI (Ammu Style)")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = testLog,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .background(Color.LightGray.copy(alpha = 0.2f))
+                .border(1.dp, Color.Gray)
+                .padding(8.dp),
+            fontSize = 12.sp,
+            color = Color.Black
+        )
     }
 }
+
 
 @Composable
 fun CheckOverlayPermission(context: Context): Boolean {
@@ -206,6 +242,7 @@ fun DefaultPreview() {
     NewAndroidProjectTheme {
         Greeting(
             "This is the main activity.",
+            aiChatViewModel = viewModel(),
             onOverlayClick = { },
             onAccessibilityClick = { },
             onShowOverlayClick = { },
